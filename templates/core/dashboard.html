@@ -1,0 +1,53 @@
+{% extends 'base.html' %}
+
+{% block title %}Dashboard - Sistema de Ventas{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <h1 class="mb-4">Dashboard</h1>
+        <div class="alert alert-info">
+            <i class="fas fa-info-circle"></i> Bienvenido al Sistema de Ventas
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-3">
+        <div class="card text-white bg-primary mb-3">
+            <div class="card-body">
+                <h5 class="card-title">Ventas Hoy</h5>
+                <h2>$0.00</h2>
+                <p class="card-text">0 ventas</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-white bg-success mb-3">
+            <div class="card-body">
+                <h5 class="card-title">Productos</h5>
+                <h2>0</h2>
+                <p class="card-text">Productos en stock</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-white bg-warning mb-3">
+            <div class="card-body">
+                <h5 class="card-title">Clientes</h5>
+                <h2>0</h2>
+                <p class="card-text">Clientes registrados</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-white bg-danger mb-3">
+            <div class="card-body">
+                <h5 class="card-title">Stock Bajo</h5>
+                <h2>0</h2>
+                <p class="card-text">Productos con stock bajo</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

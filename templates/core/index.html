@@ -1,0 +1,17 @@
+{% extends 'base.html' %}
+
+{% block title %}Inicio - Sistema de Ventas{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8 text-center">
+        <h1 class="display-4 mb-4">Sistema de Ventas</h1>
+        <p class="lead">Sistema integral de gestión de ventas, stock y facturación</p>
+        <hr class="my-4">
+        <p>Para acceder al sistema, por favor inicia sesión.</p>
+        <a href="{% url 'usuarios:login' %}" class="btn btn-primary btn-lg">
+            <i class="fas fa-sign-in-alt"></i> Iniciar Sesión
+        </a>
+    </div>
+</div>
+{% endblock %}

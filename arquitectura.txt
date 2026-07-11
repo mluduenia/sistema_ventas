@@ -1,0 +1,84 @@
+sistema_ventas/
+├── manage.py
+├── requirements.txt
+├── .env
+├── sistema_ventas/
+│   ├── __init__.py
+│   ├── settings.py
+│   ├── urls.py
+│   ├── wsgi.py
+│   └── asgi.py
+├── apps/
+│   ├── core/
+│   │   ├── __init__.py
+│   │   ├── admin.py
+│   │   ├── apps.py
+│   │   ├── models.py
+│   │   ├── views.py
+│   │   ├── urls.py
+│   │   └── forms.py
+│   ├── usuarios/
+│   │   ├── __init__.py
+│   │   ├── admin.py
+│   │   ├── apps.py
+│   │   ├── models.py
+│   │   ├── views.py
+│   │   ├── urls.py
+│   │   ├── forms.py
+│   │   └── decorators.py
+│   ├── ventas/
+│   │   ├── __init__.py
+│   │   ├── admin.py
+│   │   ├── apps.py
+│   │   ├── models.py
+│   │   ├── views.py
+│   │   ├── urls.py
+│   │   └── forms.py
+│   ├── productos/
+│   │   ├── __init__.py
+│   │   ├── admin.py
+│   │   ├── apps.py
+│   │   ├── models.py
+│   │   ├── views.py
+│   │   ├── urls.py
+│   │   └── forms.py
+│   └── configuracion/
+│       ├── __init__.py
+│       ├── admin.py
+│       ├── apps.py
+│       ├── models.py
+│       ├── views.py
+│       ├── urls.py
+│       ├── forms.py
+│       └── utils.py
+├── static/
+│   ├── css/
+│   │   ├── style.css
+│   │   └── admin.css
+│   ├── js/
+│   │   ├── main.js
+│   │   └── admin.js
+│   └── images/
+│       └── logo.png
+└── templates/
+    ├── base.html
+    ├── core/
+    │   ├── index.html
+    │   └── dashboard.html
+    ├── usuarios/
+    │   ├── login.html
+    │   ├── registro.html
+    │   ├── perfil.html
+    │   └── gestion_usuarios.html
+    ├── ventas/
+    │   ├── lista_ventas.html
+    │   ├── crear_venta.html
+    │   └── detalle_venta.html
+    ├── productos/
+    │   ├── lista_productos.html
+    │   ├── crear_producto.html
+    │   └── gestion_stock.html
+    └── configuracion/
+        ├── configuracion_general.html
+        ├── configuracion_impresoras.html
+        └── configuracion_arca.html

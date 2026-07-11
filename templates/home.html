@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Sistema de Ventas</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 30px;
+            background: #f5f6fa;
+        }
+        .container {
+            background: white;
+            padding: 40px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 { color: #2c3e50; margin-bottom: 20px; }
+        .status {
+            background: #27ae60;
+            color: white;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+        }
+        .menu {
+            display: flex;
+            gap: 15px;
+            margin: 30px 0;
+            flex-wrap: wrap;
+        }
+        .menu a {
+            background: #3498db;
+            color: white;
+            padding: 12px 25px;
+            text-decoration: none;
+            border-radius: 5px;
+            transition: background 0.3s;
+        }
+        .menu a:hover { background: #2980b9; }
+        .footer { margin-top: 30px; color: #7f8c8d; font-size: 14px; }
+        .user-info {
+            background: #e8f4fd;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 Sistema de Ventas</h1>
+        <div class="status">✅ El sistema está funcionando correctamente</div>
+        
+        {% if user.is_authenticated %}
+        <div class="user-info">
+            <p>👋 ¡Bienvenido, <strong>{{ user.username }}</strong>!</p>
+            <p><a href="/usuarios/logout/">Cerrar Sesión</a> | <a href="/dashboard/">Dashboard</a></p>
+        </div>
+        {% endif %}
+        
+        <p>Bienvenido al sistema integral de gestión de ventas.</p>
+        <div class="menu">
+            <a href="/admin/">🔧 Panel Admin</a>
+            <a href="/dashboard/">📊 Dashboard</a>
+            {% if not user.is_authenticated %}
+            <a href="/usuarios/login/">🔑 Iniciar Sesión</a>
+            {% endif %}
+        </div>
+        <div class="footer">
+            <p>Sistema de Ventas v1.0 | Django 4.2.7</p>
+        </div>
+    </div>
+</body>
+</html>
