@@ -191,6 +191,22 @@
             themeIcon.className = 'fas fa-moon fs-5 text-secondary';
         }
     }
+
+    // LÓGICA GLOBAL: SELECCIONAR TODO EL TEXTO EN INPUTS NUMÉRICOS AL HACER CLIC / FOCUS
+    document.addEventListener('focusin', function (e) {
+        if (e.target && (e.target.type === 'number' || e.target.classList.contains('input-cant') || e.target.classList.contains('input-num'))) {
+            setTimeout(() => {
+                e.target.select();
+            }, 50);
+        }
+    });
+
+    // Soporte táctil móvil (al tocar con el dedo en pantallas táctiles)
+    document.addEventListener('mouseup', function (e) {
+        if (e.target && (e.target.type === 'number' || e.target.classList.contains('input-cant') || e.target.classList.contains('input-num'))) {
+            e.preventDefault();
+        }
+    });
 </script>
 
 {% block extra_js %}{% endblock %}

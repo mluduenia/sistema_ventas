@@ -9,10 +9,14 @@ from apps.productos.models import Producto
 
 @login_required
 def lista_ventas(request):
-    """Listado general de todas las ventas registradas."""
-    ventas = Venta.objects.select_related('cliente', 'vendedor', 'turno').order_by('-fecha')
-    return render(request, 'ventas/lista_ventas.html', {'ventas': ventas})
+    """Listado general de ventas."""
+    ventas = Venta.objects.select_related('cliente', 'vendedor', 'turno').order_by('-id')
+    
+    # Si la petición viene vía AJAX (auto-refresh), devolvemos el HTML parcial
+    if request.headers.get('x-requested-with') == 'XMLHttpRequest':
+        return render(request, 'ventas/tabla_ventas_partial.html', {'ventas': ventas})
 
+    return render(request, 'ventas/lista_ventas.html', {'ventas': ventas})
 
 @login_required
 def pos_view(request):
@@ -184,16 +188,16 @@ def crear_cliente(request):
 
 @login_required
 def comprobante_ticket(request, venta_id):
-    """Generación o vista del ticket térmico."""
+    """Vista e impresión del ticket térmico."""
     venta = get_object_or_404(Venta, id=venta_id)
-    return render(request, 'ventas/ticket.html', {'venta': venta})
+    return render(request, 'ventas/ticket_imprimible.html', {'venta': venta})
 
 
 @login_required
 def comprobante_factura(request, venta_id):
-    """Generación o vista de factura A4."""
+    """Vista e impresión de la factura A4."""
     venta = get_object_or_404(Venta, id=venta_id)
-    return render(request, 'ventas/factura.html', {'venta': venta})
+    return render(request, 'ventas/factura_imprimible.html', {'venta': venta})
 
 
 @login_required
