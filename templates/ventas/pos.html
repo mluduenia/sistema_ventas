@@ -1,0 +1,489 @@
+{% extends 'base.html' %}
+
+{% block title %}Punto de Venta | POS{% endblock %}
+
+{% block extra_css %}
+<!-- Librería para lectura de códigos de barras con la cámara -->
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<div class="row g-3">
+    <!-- Columna Izquierda: Búsqueda y Carrito -->
+    <div class="col-lg-7">
+        <!-- Búsqueda de Productos -->
+        <div class="card mb-3">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span class="fw-semibold text-secondary"><i class="fas fa-search me-2"></i> Búsqueda de Producto</span>
+                <!-- BOTÓN CÁMARA: SOLO VISIBLE EN MÓVILES -->
+                <button type="button" class="btn btn-sm btn-outline-primary fw-bold d-block d-md-none" id="btn_abrir_escaner">
+                    <i class="fas fa-camera me-1"></i> Cámara
+                </button>
+            </div>
+            <div class="card-body">
+                <div class="position-relative">
+                    <div class="input-group">
+                        <input type="text" id="buscar_input" class="form-control form-control-lg" placeholder="Código de barra o nombre..." autocomplete="off" autofocus>
+                        <button class="btn btn-primary px-4" type="button" id="btn_buscar">
+                            <i class="fas fa-search me-1"></i> Buscar
+                        </button>
+                        <!-- BOTÓN CÁMARA JUNTO AL INPUT: SOLO EN MÓVILES -->
+                        <button class="btn btn-outline-secondary d-block d-md-none" type="button" id="btn_camara_input" title="Escanear cámara">
+                            <i class="fas fa-camera"></i>
+                        </button>
+                    </div>
+                    <!-- Lista flotante de resultados -->
+                    <div id="resultados_busqueda" class="list-group position-absolute w-100 shadow mt-1" style="z-index: 1050; display: none; max-height: 250px; overflow-y: auto;"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tabla del Carrito -->
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span class="fw-semibold text-secondary"><i class="fas fa-shopping-cart me-2"></i> Detalle de la Venta</span>
+                <button type="button" class="btn btn-sm btn-link text-muted text-decoration-none" id="btn_vaciar_carrito">
+                    <i class="fas fa-trash me-1"></i> Vaciar
+                </button>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table align-middle mb-0">
+                        <thead>
+                            <tr>
+                                <th>Producto</th>
+                                <th style="width: 100px;" class="text-center">Precio U.</th>
+                                <th style="width: 90px;" class="text-center">Cant.</th>
+                                <th style="width: 110px;" class="text-end">Subtotal</th>
+                                <th style="width: 40px;"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="carrito_body">
+                            <tr id="carrito_vacio">
+                                <td colspan="5" class="text-center text-muted py-5">
+                                    <i class="fas fa-shopping-bag fa-2x mb-2 opacity-25 d-block"></i>
+                                    Carrito vacío.
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Columna Derecha: Cliente, Método de Pago y Total -->
+    <div class="col-lg-5">
+        <div class="card mb-3">
+            <div class="card-body">
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between align-items-center mb-1">
+                        <label class="form-label small fw-semibold text-secondary mb-0">Cliente</label>
+                        <a href="{% url 'ventas:crear_cliente' %}?next={% url 'ventas:pos' %}" class="small text-decoration-none">
+                            <i class="fas fa-plus-circle me-1"></i> Nuevo
+                        </a>
+                    </div>
+                    <select id="cliente_id" class="form-select">
+                        <option value="">Consumidor Final</option>
+                        {% for c in clientes %}
+                            <option value="{{ c.id }}">{{ c.nombre }} {% if c.numero_documento %}({{ c.numero_documento }}){% endif %}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label small fw-semibold text-secondary">Método de Pago</label>
+                    <select id="metodo_pago" class="form-select">
+                        <option value="EFECTIVO">Efectivo</option>
+                        <option value="TARJETA_DEBITO">Tarjeta de Débito</option>
+                        <option value="TARJETA_CREDITO">Tarjeta de Crédito</option>
+                        <option value="TRANSFERENCIA">Mercado Pago / Transferencia</option>
+                    </select>
+                </div>
+
+                <div class="p-3 bg-body-tertiary rounded mb-3 d-flex justify-content-between align-items-center">
+                    <span class="fs-5 fw-bold">TOTAL</span>
+                    <span id="total_display" class="fs-2 fw-bold text-success">$0.00</span>
+                </div>
+
+                <button type="button" id="btn_procesar_venta" class="btn btn-success btn-lg w-100 py-3 fw-bold shadow-sm">
+                    <i class="fas fa-check-circle me-2"></i> Procesar Venta
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- VENTANA MODAL PARA LECTOR DE CÁMARA (MÓVIL) -->
+<div id="overlayEscaner" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0, 0, 0, 0.85); z-index: 9999; align-items: center; justify-content: center;">
+    <div class="card border-0" style="width: 90%; max-width: 400px; border-radius: 12px; overflow: hidden;">
+        <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center py-2">
+            <span class="small fw-bold"><i class="fas fa-camera me-1 text-warning"></i> Escáner Móvil</span>
+            <button type="button" class="btn-close btn-close-white" id="btn_cerrar_escaner"></button>
+        </div>
+        <div class="card-body p-2 text-center">
+            <div id="reader" style="width: 100%; min-height: 230px; background: #000; border-radius: 6px;"></div>
+            <p class="text-muted small mt-2 mb-0"><i class="fas fa-info-circle me-1"></i> Apunta la cámara al código de barras.</p>
+        </div>
+        <div class="card-footer text-center py-2">
+            <button type="button" class="btn btn-sm btn-secondary fw-bold px-4" id="btn_cancelar_escaner">Cancelar</button>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL POST-VENTA (Opciones al Cobrar) -->
+<div id="overlayPostVenta" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0, 0, 0, 0.75); z-index: 9998; align-items: center; justify-content: center;">
+    <div class="card border-0 shadow-lg" style="width: 95%; max-width: 500px; border-radius: 12px; overflow: hidden;">
+        <div class="card-header bg-success text-white py-3 text-center border-0">
+            <h4 class="mb-0 fw-bold"><i class="fas fa-check-circle me-2"></i> ¡Venta Exitosa!</h4>
+        </div>
+        <div class="card-body p-4 text-center">
+            <p class="fs-5 mb-4">Comprobante generado: <strong id="modal_venta_id" class="text-success">#0</strong></p>
+
+            <div class="d-grid gap-3">
+                <button type="button" class="btn btn-outline-primary btn-lg fw-bold text-start p-3" id="btn_imprimir_ticket">
+                    <i class="fas fa-receipt me-3 text-primary fa-lg"></i> Imprimir Ticket Térmico (80mm)
+                </button>
+
+                <button type="button" class="btn btn-outline-dark btn-lg fw-bold text-start p-3" id="btn_imprimir_factura">
+                    <i class="fas fa-file-invoice-dollar me-3 text-dark fa-lg"></i> Ver / Descargar Factura (A4)
+                </button>
+
+                <div class="border rounded p-3 text-start bg-body-tertiary mt-2">
+                    <label class="form-label fw-bold small text-secondary mb-1">
+                        <i class="fas fa-envelope me-1"></i> Enviar Comprobante por Email
+                    </label>
+                    <div class="input-group">
+                        <input type="email" id="email_cliente_input" class="form-control" placeholder="correo@cliente.com">
+                        <button type="button" class="btn btn-info text-white fw-bold" id="btn_enviar_email">
+                            Enviar <i class="fas fa-paper-plane ms-1"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="card-footer bg-body-tertiary text-center py-3 border-0">
+            <button type="button" class="btn btn-secondary px-5 fw-bold" id="btn_cerrar_modal">
+                Nueva Venta <i class="fas fa-arrow-right ms-1"></i>
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- JavaScript para el POS, Cámara y Procesamiento AJAX -->
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    let carrito = [];
+    let ultimaVentaId = null;
+    let html5QrcodeScanner = null;
+
+    const buscarInput = document.getElementById('buscar_input');
+    const btnBuscar = document.getElementById('btn_buscar');
+    const resultadosDiv = document.getElementById('resultados_busqueda');
+    const carritoBody = document.getElementById('carrito_body');
+    const totalDisplay = document.getElementById('total_display');
+    const btnProcesar = document.getElementById('btn_procesar_venta');
+    const btnVaciar = document.getElementById('btn_vaciar_carrito');
+
+    // Escáner Cámara
+    const overlayEscaner = document.getElementById('overlayEscaner');
+    const btnAbrirEscaner = document.getElementById('btn_abrir_escaner');
+    const btnCamaraInput = document.getElementById('btn_camara_input');
+    const btnCerrarEscaner = document.getElementById('btn_cerrar_escaner');
+    const btnCancelarEscaner = document.getElementById('btn_cancelar_escaner');
+
+    // Modal Post-Venta
+    const overlayPostVenta = document.getElementById('overlayPostVenta');
+    const modalVentaId = document.getElementById('modal_venta_id');
+    const emailInput = document.getElementById('email_cliente_input');
+
+    // Sonido y vibración al escanear
+    function reproducirBeep() {
+        try {
+            const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(1046.50, audioCtx.currentTime);
+            gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.15);
+
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.15);
+        } catch (e) {}
+
+        if (navigator.vibrate) navigator.vibrate(100);
+    }
+
+    // Funciones del Escáner de Cámara
+    function iniciarCamara() {
+        overlayEscaner.style.display = 'flex';
+        if (!html5QrcodeScanner) html5QrcodeScanner = new Html5Qrcode("reader");
+
+        const config = { fps: 10, qrbox: { width: 220, height: 140 } };
+
+        html5QrcodeScanner.start({ facingMode: "environment" }, config, onScanSuccess)
+            .catch(err => {
+                alert("No se pudo acceder a la cámara. Asegúrate de dar los permisos correspondientes.");
+                detenerCamara();
+            });
+    }
+
+    function detenerCamara() {
+        if (html5QrcodeScanner && html5QrcodeScanner.isScanning) {
+            html5QrcodeScanner.stop().then(() => { overlayEscaner.style.display = 'none'; })
+                .catch(() => { overlayEscaner.style.display = 'none'; });
+        } else {
+            overlayEscaner.style.display = 'none';
+        }
+    }
+
+    function onScanSuccess(decodedText) {
+        detenerCamara();
+        reproducirBeep();
+
+        const codigoLimpio = decodedText.trim();
+        buscarInput.value = codigoLimpio;
+
+        fetch(`{% url 'ventas:buscar_producto_ajax' %}?term=${encodeURIComponent(codigoLimpio)}`)
+            .then(res => res.json())
+            .then(data => {
+                if (data && data.length > 0) {
+                    agregarAlCarrito(data[0]);
+                    buscarInput.value = '';
+                    buscarInput.focus();
+                } else {
+                    alert(`No se encontró ningún producto con el código: "${codigoLimpio}"`);
+                }
+            })
+            .catch(err => console.error("Error AJAX:", err));
+    }
+
+    if (btnAbrirEscaner) btnAbrirEscaner.addEventListener('click', iniciarCamara);
+    if (btnCamaraInput) btnCamaraInput.addEventListener('click', iniciarCamara);
+    if (btnCerrarEscaner) btnCerrarEscaner.addEventListener('click', detenerCamara);
+    if (btnCancelarEscaner) btnCancelarEscaner.addEventListener('click', detenerCamara);
+
+    // Búsqueda de Productos manual por teclado
+    function buscarProductos() {
+        const query = buscarInput.value.trim();
+        if (query.length < 1) {
+            resultadosDiv.style.display = 'none';
+            return;
+        }
+
+        fetch(`{% url 'ventas:buscar_producto_ajax' %}?term=${encodeURIComponent(query)}`)
+            .then(response => response.json())
+            .then(data => {
+                resultadosDiv.innerHTML = '';
+                if (data.length === 0) {
+                    resultadosDiv.innerHTML = '<div class="list-group-item text-muted small p-2">Sin resultados.</div>';
+                } else {
+                    data.forEach(prod => {
+                        const item = document.createElement('a');
+                        item.href = '#';
+                        item.className = 'list-group-item list-group-item-action d-flex justify-content-between align-items-center p-2';
+                        item.innerHTML = `
+                            <div>
+                                <strong class="d-block">${prod.nombre}</strong>
+                                <small class="text-secondary">Cod: ${prod.codigo_barra || 'N/A'} | Stock: ${prod.stock_actual}</small>
+                            </div>
+                            <span class="badge bg-success rounded-pill fs-6">$${prod.precio_venta.toFixed(2)}</span>
+                        `;
+                        item.addEventListener('click', function (e) {
+                            e.preventDefault();
+                            agregarAlCarrito(prod);
+                            resultadosDiv.style.display = 'none';
+                            buscarInput.value = '';
+                            buscarInput.focus();
+                        });
+                        resultadosDiv.appendChild(item);
+                    });
+                }
+                resultadosDiv.style.display = 'block';
+            });
+    }
+
+    buscarInput.addEventListener('input', buscarProductos);
+    btnBuscar.addEventListener('click', buscarProductos);
+
+    document.addEventListener('click', function (e) {
+        if (!buscarInput.contains(e.target) && !resultadosDiv.contains(e.target)) {
+            resultadosDiv.style.display = 'none';
+        }
+    });
+
+    // Lógica del Carrito
+    function agregarAlCarrito(producto) {
+        const index = carrito.findIndex(p => p.id === producto.id);
+        if (index !== -1) {
+            carrito[index].cantidad += 1;
+        } else {
+            carrito.push({
+                id: producto.id,
+                nombre: producto.nombre,
+                precio: producto.precio_venta,
+                cantidad: 1
+            });
+        }
+        renderizarCarrito();
+    }
+
+    function renderizarCarrito() {
+        carritoBody.innerHTML = '';
+
+        if (carrito.length === 0) {
+            carritoBody.innerHTML = `
+                <tr id="carrito_vacio">
+                    <td colspan="5" class="text-center text-muted py-5">
+                        <i class="fas fa-shopping-bag fa-2x mb-2 opacity-25 d-block"></i>
+                        Carrito vacío.
+                    </td>
+                </tr>
+            `;
+            totalDisplay.textContent = '$0.00';
+            return;
+        }
+
+        let total = 0;
+
+        carrito.forEach((prod, idx) => {
+            const subtotal = prod.precio * prod.cantidad;
+            total += subtotal;
+
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td><strong>${prod.nombre}</strong></td>
+                <td class="text-center">$${prod.precio.toFixed(2)}</td>
+                <td class="text-center">
+                    <input type="number" class="form-control form-control-sm text-center input-cant" data-idx="${idx}" value="${prod.cantidad}" min="1" style="width: 65px; margin: 0 auto;">
+                </td>
+                <td class="text-end fw-bold">$${subtotal.toFixed(2)}</td>
+                <td class="text-center">
+                    <button class="btn btn-sm btn-link text-danger btn-del p-0" data-idx="${idx}">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </td>
+            `;
+            carritoBody.appendChild(tr);
+        });
+
+        totalDisplay.textContent = `$${total.toFixed(2)}`;
+
+        document.querySelectorAll('.input-cant').forEach(i => {
+            i.addEventListener('change', function() {
+                const idx = parseInt(this.dataset.idx);
+                const val = parseInt(this.value);
+                if (val > 0) {
+                    carrito[idx].cantidad = val;
+                    renderizarCarrito();
+                }
+            });
+        });
+
+        document.querySelectorAll('.btn-del').forEach(b => {
+            b.addEventListener('click', function() {
+                const idx = parseInt(this.dataset.idx);
+                carrito.splice(idx, 1);
+                renderizarCarrito();
+            });
+        });
+    }
+
+    btnVaciar.addEventListener('click', function() {
+        carrito = [];
+        renderizarCarrito();
+    });
+
+    // PROCESAR VENTA AJAX (Llama a Django y abre el modal post-venta)
+    btnProcesar.addEventListener('click', function () {
+        if (carrito.length === 0) {
+            alert('Por favor agrega al menos un producto al carrito antes de procesar.');
+            return;
+        }
+
+        const clienteId = document.getElementById('cliente_id').value;
+        const metodoPago = document.getElementById('metodo_pago').value;
+
+        const payload = {
+            cliente_id: clienteId || null,
+            metodo_pago: metodoPago,
+            items: carrito
+        };
+
+        btnProcesar.disabled = true;
+        btnProcesar.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i> Procesando...';
+
+        fetch('{% url "ventas:procesar_venta_ajax" %}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': '{{ csrf_token }}'
+            },
+            body: JSON.stringify(payload)
+        })
+        .then(res => res.json())
+        .then(data => {
+            btnProcesar.disabled = false;
+            btnProcesar.innerHTML = '<i class="fas fa-check-circle me-2"></i> Procesar Venta';
+
+            if (data.success) {
+                carrito = [];
+                renderizarCarrito();
+
+                // Abrir modal de opciones post-venta
+                ultimaVentaId = data.venta_id;
+                modalVentaId.textContent = '#' + ultimaVentaId;
+                emailInput.value = data.cliente_email || '';
+                overlayPostVenta.style.display = 'flex';
+            } else {
+                alert('Error al procesar la venta: ' + (data.error || 'Ocurrió un problema en el servidor.'));
+            }
+        })
+        .catch(err => {
+            btnProcesar.disabled = false;
+            btnProcesar.innerHTML = '<i class="fas fa-check-circle me-2"></i> Procesar Venta';
+            console.error("Error AJAX:", err);
+            alert('Ocurrió un error de red al procesar la venta.');
+        });
+    });
+
+    // Botones del Modal Post-Venta
+    document.getElementById('btn_imprimir_ticket').addEventListener('click', function() {
+        if (ultimaVentaId) window.open(`/ventas/comprobante/${ultimaVentaId}/ticket/`, '_blank');
+    });
+
+    document.getElementById('btn_imprimir_factura').addEventListener('click', function() {
+        if (ultimaVentaId) window.open(`/ventas/comprobante/${ultimaVentaId}/factura/`, '_blank');
+    });
+
+    document.getElementById('btn_enviar_email').addEventListener('click', function() {
+        const correo = emailInput.value.trim();
+        if (!correo) return alert('Ingresa un correo electrónico válido.');
+
+        fetch(`/ventas/enviar-email/${ultimaVentaId}/`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': '{{ csrf_token }}'
+            },
+            body: JSON.stringify({ email: correo })
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) alert('¡Comprobante enviado por correo con éxito!');
+            else alert('Error: ' + data.error);
+        });
+    });
+
+    document.getElementById('btn_cerrar_modal').addEventListener('click', function() {
+        overlayPostVenta.style.display = 'none';
+        buscarInput.focus();
+    });
+});
+</script>
+{% endblock %}

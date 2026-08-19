@@ -1,0 +1,235 @@
+{% extends 'base.html' %}
+
+{% block title %}{% if producto %}Editar Producto{% else %}Nuevo Producto{% endif %} | Sistema de Ventas{% endblock %}
+
+{% block extra_css %}
+<!-- Librería para la lectura de código de barras mediante la cámara -->
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8 col-lg-7">
+        <div class="card shadow-sm border-0">
+            <div class="card-header bg-primary text-white py-3 d-flex justify-content-between align-items-center">
+                <h4 class="mb-0 fw-bold">
+                    <i class="fas {% if producto %}fa-edit{% else %}fa-box-open{% endif %} me-2"></i>
+                    {% if producto %}Editar Producto: {{ producto.nombre }}{% else %}Registrar Nuevo Producto{% endif %}
+                </h4>
+                <a href="{% url 'productos:lista_productos' %}" class="btn btn-sm btn-light fw-bold">
+                    <i class="fas fa-arrow-left me-1"></i> Volver al Catálogo
+                </a>
+            </div>
+
+            <div class="card-body p-4">
+                <form method="post" enctype="multipart/form-data" id="form_producto">
+                    {% csrf_token %}
+
+                    {% if form.errors %}
+                        <div class="alert alert-danger shadow-sm mb-4">
+                            <p class="fw-bold mb-1"><i class="fas fa-exclamation-triangle me-1"></i> Por favor corrige los siguientes errores:</p>
+                            <ul class="mb-0 ps-3">
+                                {% for field in form %}
+                                    {% for error in field.errors %}
+                                        <li><strong>{{ field.label }}:</strong> {{ error }}</li>
+                                    {% endfor %}
+                                {% endfor %}
+                                {% for error in form.non_field_errors %}
+                                    <li>{{ error }}</li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+                    {% endif %}
+
+                    <div class="row g-3">
+                        <!-- Campo Código de Barras con Botón Escáner -->
+                        <div class="col-12">
+                            <label for="id_codigo_barra" class="form-label fw-bold">Código de Barras</label>
+                            <div class="input-group">
+                                <input type="text" name="codigo_barra" id="id_codigo_barra" 
+                                       class="form-control {% if form.codigo_barra.errors %}is-invalid{% endif %}" 
+                                       placeholder="Ej: 779123456789" 
+                                       value="{{ form.codigo_barra.value|default:'' }}" 
+                                       autocomplete="off" autofocus>
+                                <button type="button" class="btn btn-warning fw-bold" id="btn_escanear_codigo_prod" title="Escanear con la cámara del celular">
+                                    <i class="fas fa-camera me-1"></i> Escanear
+                                </button>
+                            </div>
+                            <small class="text-secondary">Puedes usar un lector USB o presionar el botón de cámara desde el celular.</small>
+                        </div>
+
+                        <!-- Nombre del Producto -->
+                        <div class="col-12">
+                            <label for="id_nombre" class="form-label fw-bold">Nombre del Producto <span class="text-danger">*</span></label>
+                            <input type="text" name="nombre" id="id_nombre" 
+                                   class="form-control {% if form.nombre.errors %}is-invalid{% endif %}" 
+                                   placeholder="Ej: Coca Cola 2.25L" 
+                                   value="{{ form.nombre.value|default:'' }}" required>
+                        </div>
+
+                        <!-- Categoría / Rubro -->
+                        <div class="col-md-6">
+                            <label for="id_categoria" class="form-label fw-bold">Categoría / Rubro</label>
+                            <div class="form-group">
+                                {{ form.categoria }}
+                            </div>
+                        </div>
+
+                        <!-- Proveedor -->
+                        <div class="col-md-6">
+                            <label for="id_proveedor" class="form-label fw-bold">Proveedor</label>
+                            <div class="form-group">
+                                {{ form.proveedor }}
+                            </div>
+                        </div>
+
+                        <!-- Alícuota IVA (Requerido para ARCA) -->
+                        <div class="col-12">
+                            <label for="id_alicuota_iva" class="form-label fw-bold">Alícuota IVA <span class="text-danger">*</span></label>
+                            <div class="form-group">
+                                {% if form.alicuota_iva %}
+                                    {{ form.alicuota_iva }}
+                                {% else %}
+                                    <select name="alicuota_iva" id="id_alicuota_iva" class="form-select" required>
+                                        <option value="21.00" selected>21.0% (General)</option>
+                                        <option value="10.50">10.5% (Reducido)</option>
+                                        <option value="0.00">0.0% (Exento)</option>
+                                        <option value="27.00">27.0% (Servicios)</option>
+                                    </select>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        <!-- Precios: Costo y Venta -->
+                        <div class="col-md-6">
+                            <label for="id_precio_costo" class="form-label fw-bold">Precio de Costo ($)</label>
+                            <input type="number" step="0.01" name="precio_costo" id="id_precio_costo" 
+                                   class="form-control {% if form.precio_costo.errors %}is-invalid{% endif %}" 
+                                   placeholder="0.00" 
+                                   value="{{ form.precio_costo.value|default:'0.00' }}">
+                        </div>
+
+                        <div class="col-md-6">
+                            <label for="id_precio_venta" class="form-label fw-bold">Precio de Venta ($) <span class="text-danger">*</span></label>
+                            <input type="number" step="0.01" name="precio_venta" id="id_precio_venta" 
+                                   class="form-control {% if form.precio_venta.errors %}is-invalid{% endif %}" 
+                                   placeholder="0.00" 
+                                   value="{{ form.precio_venta.value|default:'0.00' }}" required>
+                        </div>
+
+                        <!-- Stock Actual y Stock Mínimo -->
+                        <div class="col-md-6">
+                            <label for="id_stock_actual" class="form-label fw-bold">Stock Actual <span class="text-danger">*</span></label>
+                            <input type="number" name="stock_actual" id="id_stock_actual" 
+                                   class="form-control {% if form.stock_actual.errors %}is-invalid{% endif %}" 
+                                   placeholder="0" 
+                                   value="{{ form.stock_actual.value|default:'0' }}" required>
+                        </div>
+
+                        <div class="col-md-6">
+                            <label for="id_stock_minimo" class="form-label fw-bold">Stock Mínimo (Alerta)</label>
+                            <input type="number" name="stock_minimo" id="id_stock_minimo" 
+                                   class="form-control {% if form.stock_minimo.errors %}is-invalid{% endif %}" 
+                                   placeholder="5" 
+                                   value="{{ form.stock_minimo.value|default:'5' }}">
+                        </div>
+                    </div>
+
+                    <hr class="my-4">
+
+                    <!-- Botones de Acción -->
+                    <div class="d-flex justify-content-end gap-2">
+                        <a href="{% url 'productos:lista_productos' %}" class="btn btn-secondary px-4 fw-bold">
+                            Cancelar
+                        </a>
+                        <button type="submit" class="btn btn-success px-5 fw-bold shadow-sm">
+                            <i class="fas fa-save me-1"></i> Guardar Producto
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- VENTANA MODAL FLOTANTE PARA EL ESCÁNER DE CÁMARA -->
+<div id="overlayEscanerProd" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0, 0, 0, 0.85); z-index: 9999; align-items: center; justify-content: center;">
+    <div class="card shadow-lg border-0" style="width: 95%; max-width: 440px; border-radius: 12px; overflow: hidden;">
+        <div class="card-header bg-dark text-white py-3 d-flex justify-content-between align-items-center">
+            <h5 class="mb-0 fw-bold"><i class="fas fa-camera me-2 text-warning"></i> Escanear Código</h5>
+            <button type="button" class="btn-close btn-close-white" id="btn_cerrar_escaner_prod"></button>
+        </div>
+        <div class="card-body p-3 text-center">
+            <div id="reader_prod" style="width: 100%; min-height: 250px; background: #000; border-radius: 8px;"></div>
+            <p class="text-muted small mt-2 mb-0"><i class="fas fa-info-circle me-1"></i> Enfoca el código de barras del empaque.</p>
+        </div>
+        <div class="card-footer bg-light text-center py-2">
+            <button type="button" class="btn btn-secondary px-4 fw-bold" id="btn_cancelar_escaner_prod">
+                Cancelar
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- JavaScript para el Escáner y darle formato a Selects -->
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    // Aplicar estilo de Bootstrap a los campos renderizados por Django Form
+    ['id_categoria', 'id_proveedor', 'id_alicuota_iva'].forEach(function(id) {
+        const el = document.getElementById(id);
+        if (el) el.classList.add('form-select');
+    });
+
+    let html5QrcodeScannerProd = null;
+
+    const inputCodigoBarra = document.getElementById('id_codigo_barra');
+    const btnEscanearProd = document.getElementById('btn_escanear_codigo_prod');
+    const overlayEscanerProd = document.getElementById('overlayEscanerProd');
+    const btnCerrarEscanerProd = document.getElementById('btn_cerrar_escaner_prod');
+    const btnCancelarEscanerProd = document.getElementById('btn_cancelar_escaner_prod');
+
+    function iniciarCamaraProd() {
+        overlayEscanerProd.style.display = 'flex';
+
+        if (!html5QrcodeScannerProd) {
+            html5QrcodeScannerProd = new Html5Qrcode("reader_prod");
+        }
+
+        const config = { fps: 10, qrbox: { width: 250, height: 150 } };
+
+        html5QrcodeScannerProd.start(
+            { facingMode: "environment" },
+            config,
+            onScanSuccessProd
+        ).catch(err => {
+            alert("No se pudo acceder a la cámara. Asegúrate de otorgar los permisos en tu navegador.");
+            detenerCamaraProd();
+        });
+    }
+
+    function detenerCamaraProd() {
+        if (html5QrcodeScannerProd && html5QrcodeScannerProd.isScanning) {
+            html5QrcodeScannerProd.stop().then(() => {
+                overlayEscanerProd.style.display = 'none';
+            }).catch(() => {
+                overlayEscanerProd.style.display = 'none';
+            });
+        } else {
+            overlayEscanerProd.style.display = 'none';
+        }
+    }
+
+    function onScanSuccessProd(decodedText) {
+        detenerCamaraProd();
+        if (inputCodigoBarra) {
+            inputCodigoBarra.value = decodedText;
+            inputCodigoBarra.focus();
+        }
+    }
+
+    if (btnEscanearProd) btnEscanearProd.addEventListener('click', iniciarCamaraProd);
+    if (btnCerrarEscanerProd) btnCerrarEscanerProd.addEventListener('click', detenerCamaraProd);
+    if (btnCancelarEscanerProd) btnCancelarEscanerProd.addEventListener('click', detenerCamaraProd);
+});
+</script>
+{% endblock %}

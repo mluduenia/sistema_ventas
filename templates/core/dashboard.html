@@ -1,52 +1,158 @@
-{% extends 'base.html' %}
+﻿{% extends 'base.html' %}
 
-{% block title %}Dashboard - Sistema de Ventas{% endblock %}
+{% block title %}Dashboard | Panel Principal{% endblock %}
 
 {% block content %}
-<div class="row">
-    <div class="col-12">
-        <h1 class="mb-4">Dashboard</h1>
-        <div class="alert alert-info">
-            <i class="fas fa-info-circle"></i> Bienvenido al Sistema de Ventas
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h3 class="fw-bold mb-1"><i class="fas fa-chart-line text-primary me-2"></i> Panel de Control</h3>
+        <p class="text-secondary small mb-0">Resumen general de actividad y métricas del sistema.</p>
+    </div>
+    <a href="{% url 'ventas:pos' %}" class="btn btn-primary fw-bold shadow-sm">
+        <i class="fas fa-cash-register me-2"></i> Ir al POS
+    </a>
+</div>
+
+<!-- TARJETAS DE MÉTRICAS (4 COLUMNAS) -->
+<div class="row g-3 mb-4">
+    <!-- 1. Total Recaudado -->
+    <div class="col-12 col-sm-6 col-xl-3">
+        <div class="card h-100 border-0 shadow-sm">
+            <div class="card-body p-3 d-flex align-items-center justify-content-between">
+                <div>
+                    <span class="text-secondary small fw-semibold text-uppercase d-block mb-1">Total Recaudado</span>
+                    <h4 class="fw-bold text-success mb-0">${{ total_recaudado|floatformat:2 }}</h4>
+                </div>
+                <div class="p-3 bg-success-subtle text-success rounded-3">
+                    <i class="fas fa-wallet fa-lg"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 2. Cantidad de Ventas -->
+    <div class="col-12 col-sm-6 col-xl-3">
+        <div class="card h-100 border-0 shadow-sm">
+            <div class="card-body p-3 d-flex align-items-center justify-content-between">
+                <div>
+                    <span class="text-secondary small fw-semibold text-uppercase d-block mb-1">Ventas Totales</span>
+                    <h4 class="fw-bold mb-0">{{ cantidad_ventas }}</h4>
+                </div>
+                <div class="p-3 bg-primary-subtle text-primary rounded-3">
+                    <i class="fas fa-shopping-cart fa-lg"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 3. Vendedor Top -->
+    <div class="col-12 col-sm-6 col-xl-3">
+        <div class="card h-100 border-0 shadow-sm">
+            <div class="card-body p-3 d-flex align-items-center justify-content-between">
+                <div>
+                    <span class="text-secondary small fw-semibold text-uppercase d-block mb-1">Vendedor Top</span>
+                    <h5 class="fw-bold mb-0 text-truncate" style="max-width: 140px;">
+                        {% if vendedor_top %}
+                            {% if vendedor_top.usuario__first_name %}
+                                {{ vendedor_top.usuario__first_name }}
+                            {% else %}
+                                {{ vendedor_top.usuario__username }}
+                            {% endif %}
+                        {% else %}
+                            N/A
+                        {% endif %}
+                    </h5>
+                    {% if vendedor_top %}
+                        <small class="text-secondary">{{ vendedor_top.total_ventas }} ventas</small>
+                    {% endif %}
+                </div>
+                <div class="p-3 bg-warning-subtle text-warning rounded-3">
+                    <i class="fas fa-award fa-lg"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 4. Producto Más Vendido -->
+    <div class="col-12 col-sm-6 col-xl-3">
+        <div class="card h-100 border-0 shadow-sm">
+            <div class="card-body p-3 d-flex align-items-center justify-content-between">
+                <div>
+                    <span class="text-secondary small fw-semibold text-uppercase d-block mb-1">Producto Top</span>
+                    <h5 class="fw-bold mb-0 text-truncate" style="max-width: 140px;" title="{{ producto_top.producto__nombre|default:'N/A' }}">
+                        {{ producto_top.producto__nombre|default:'N/A' }}
+                    </h5>
+                    {% if producto_top %}
+                        <small class="text-secondary">{{ producto_top.total_vendido }} un. vendidas</small>
+                    {% endif %}
+                </div>
+                <div class="p-3 bg-info-subtle text-info rounded-3">
+                    <i class="fas fa-star fa-lg"></i>
+                </div>
+            </div>
         </div>
     </div>
 </div>
 
-<div class="row">
-    <div class="col-md-3">
-        <div class="card text-white bg-primary mb-3">
-            <div class="card-body">
-                <h5 class="card-title">Ventas Hoy</h5>
-                <h2>$0.00</h2>
-                <p class="card-text">0 ventas</p>
-            </div>
-        </div>
+<!-- ÚLTIMAS 10 VENTAS -->
+<div class="card border-0 shadow-sm">
+    <div class="card-header d-flex justify-content-between align-items-center py-3">
+        <h6 class="fw-bold mb-0 text-secondary">
+            <i class="fas fa-history me-2"></i> Últimas 10 Ventas Realizadas
+        </h6>
     </div>
-    <div class="col-md-3">
-        <div class="card text-white bg-success mb-3">
-            <div class="card-body">
-                <h5 class="card-title">Productos</h5>
-                <h2>0</h2>
-                <p class="card-text">Productos en stock</p>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="card text-white bg-warning mb-3">
-            <div class="card-body">
-                <h5 class="card-title">Clientes</h5>
-                <h2>0</h2>
-                <p class="card-text">Clientes registrados</p>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="card text-white bg-danger mb-3">
-            <div class="card-body">
-                <h5 class="card-title">Stock Bajo</h5>
-                <h2>0</h2>
-                <p class="card-text">Productos con stock bajo</p>
-            </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table align-middle mb-0">
+                <thead>
+                    <tr>
+                        <th class="ps-3">N° Venta</th>
+                        <th>Fecha y Hora</th>
+                        <th>Cliente</th>
+                        <th>Vendedor</th>
+                        <th class="text-center">Método de Pago</th>
+                        <th class="text-end pe-3">Total</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for venta in ultimas_ventas %}
+                        <tr>
+                            <td class="ps-3 fw-bold">#{{ venta.id }}</td>
+                            <td><small class="text-secondary">{{ venta.fecha_hora|date:"d/m/Y H:i" }} hs</small></td>
+                            <td>
+                                {% if venta.cliente %}
+                                    <span class="fw-semibold">{{ venta.cliente.nombre }}</span>
+                                {% else %}
+                                    <span class="text-muted">Consumidor Final</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <span class="badge bg-body-tertiary text-body border">
+                                    <i class="fas fa-user me-1"></i> {{ venta.usuario.username }}
+                                </span>
+                            </td>
+                            <td class="text-center">
+                                <span class="badge 
+                                    {% if venta.metodo_pago == 'EFECTIVO' %}bg-success-subtle text-success border border-success-subtle
+                                    {% elif venta.metodo_pago == 'TRANSFERENCIA' %}bg-info-subtle text-info border border-info-subtle
+                                    {% else %}bg-primary-subtle text-primary border border-primary-subtle{% endif %}">
+                                    {{ venta.get_metodo_pago_display|default:venta.metodo_pago }}
+                                </span>
+                            </td>
+                            <td class="text-end pe-3 fw-bold text-success fs-6">
+                                ${{ venta.total|floatformat:2 }}
+                            </td>
+                        </tr>
+                    {% empty %}
+                        <tr>
+                            <td colspan="6" class="text-center text-muted py-5">
+                                <i class="fas fa-receipt fa-2x mb-2 opacity-25 d-block"></i>
+                                No se registraron ventas aún.
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
         </div>
     </div>
 </div>

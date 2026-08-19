@@ -1,0 +1,35 @@
+{% extends 'base.html' %}
+
+{% block title %}Apertura de Turno | POS{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center align-items-center min-vh-75">
+    <div class="col-12 col-md-6 col-lg-5">
+        <div class="card border-0 shadow-lg">
+            <div class="card-header bg-primary text-white py-3 text-center border-0">
+                <h4 class="mb-0 fw-bold"><i class="fas fa-lock me-2"></i> Apertura de Turno de Caja</h4>
+            </div>
+            <div class="card-body p-4">
+                <p class="text-secondary small mb-4 text-center">
+                    Hola <strong>{{ request.user.username }}</strong>. Para comenzar a vender debes abrir tu turno ingresando el dinero en efectivo que tienes en cajón (fondo de cambio).
+                </p>
+
+                <form method="POST">
+                    {% csrf_token %}
+                    <div class="mb-4">
+                        <label class="form-label fw-bold text-secondary">Monto Inicial en Cajón ($)</label>
+                        <div class="input-group input-group-lg">
+                            <span class="input-group-text bg-body-tertiary fw-bold">$</span>
+                            <input type="number" step="0.01" name="monto_inicial" class="form-control fw-bold" placeholder="0.00" value="0.00" required autofocus>
+                        </div>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary btn-lg w-100 fw-bold shadow-sm">
+                        <i class="fas fa-key me-2"></i> Abrir Turno e Ir al POS
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

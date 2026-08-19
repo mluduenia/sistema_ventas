@@ -1,0 +1,166 @@
+/* ===================================================
+   TEMA SOBRIO & SOFISTICADO (Modo Día / Noche)
+   =================================================== */
+
+/* Modo Día (Light Mode) - Tono Gris Piedra Apagado */
+:root,
+[data-bs-theme="light"] {
+    --bs-body-bg: #d1d5db !important;
+    --bs-body-color: #111827 !important;
+    --bs-card-bg: #e5e7eb !important;
+    --bs-tertiary-bg: #9ca3af !important;
+    --bs-border-color: #9ca3af !important;
+    
+    --bg-main: #d1d5db;
+    --bg-card: #e5e7eb;
+    --border-color: #9ca3af;
+    --text-primary: #111827;
+    --text-secondary: #4b5563;
+    --accent-primary: #2563eb;
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+/* Modo Noche (Dark Mode) */
+[data-bs-theme="dark"] {
+    --bs-body-bg: #090d16 !important;
+    --bs-body-color: #f3f4f6 !important;
+    --bs-card-bg: #111827 !important;
+    --bs-tertiary-bg: #1f2937 !important;
+    --bs-border-color: #1f2937 !important;
+
+    --bg-main: #090d16;
+    --bg-card: #111827;
+    --border-color: #1f2937;
+    --text-primary: #f3f4f6;
+    --text-secondary: #9ca3af;
+    --accent-primary: #3b82f6;
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+/* Estilos Generales Obligatorios */
+html, body {
+    background-color: var(--bs-body-bg) !important;
+    color: var(--bs-body-color) !important;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    transition: background-color 0.2s ease, color 0.2s ease;
+    overflow-x: hidden;
+}
+
+/* Forzar que CUALQUIER elemento con fondo blanco (como los paneles de filtro) respete el tema activo */
+.card, 
+.bg-white, 
+.bg-light,
+.bg-body,
+.bg-body-tertiary,
+.list-group-item,
+.modal-content,
+.offcanvas {
+    background-color: var(--bs-card-bg) !important;
+    color: var(--bs-body-color) !important;
+    border-color: var(--bs-border-color) !important;
+}
+
+/* Estilos para Tarjetas */
+.card {
+    border: 1px solid var(--bs-border-color) !important;
+    border-radius: 10px !important;
+    box-shadow: var(--shadow-sm) !important;
+}
+
+.card-header {
+    background-color: transparent !important;
+    border-bottom: 1px solid var(--bs-border-color) !important;
+    padding: 0.8rem 1rem;
+}
+
+/* Labels de Formularios / Filtros */
+label, .form-label {
+    color: var(--text-secondary) !important;
+}
+
+/* Formularios, Inputs y Selects */
+.form-control, 
+.form-select,
+.input-group-text {
+    background-color: var(--bs-card-bg) !important;
+    color: var(--bs-body-color) !important;
+    border: 1px solid var(--bs-border-color) !important;
+    border-radius: 6px !important;
+}
+
+[data-bs-theme="dark"] .form-control,
+[data-bs-theme="dark"] .form-select,
+[data-bs-theme="dark"] .input-group-text {
+    background-color: #0f172a !important;
+    color: #f8fafc !important;
+    border-color: #334155 !important;
+}
+
+.form-control:focus, 
+.form-select:focus {
+    border-color: var(--accent-primary) !important;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15) !important;
+}
+
+/* Tablas */
+.table {
+    color: var(--bs-body-color) !important;
+    --bs-table-bg: transparent !important;
+}
+
+.table th {
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 0.75rem;
+    letter-spacing: 0.05em;
+    color: var(--text-secondary);
+    border-bottom-color: var(--bs-border-color) !important;
+}
+
+.table td {
+    border-bottom-color: var(--bs-border-color) !important;
+}
+
+/* Optimización Móvil */
+@media (max-width: 767.98px) {
+    body {
+        font-size: 0.875rem;
+    }
+
+    h3 {
+        font-size: 1.25rem !important;
+    }
+
+    h4 {
+        font-size: 1.1rem !important;
+    }
+
+    .card-body {
+        padding: 0.8rem !important;
+    }
+
+    .btn {
+        padding: 0.4rem 0.75rem !important;
+        font-size: 0.85rem !important;
+    }
+
+    .form-control, .form-select {
+        font-size: 16px !important; 
+        padding: 0.4rem 0.6rem !important;
+    }
+
+    .table-responsive {
+        border: 0;
+    }
+
+    .table td, .table th {
+        padding: 0.5rem 0.4rem !important;
+        font-size: 0.8rem !important;
+    }
+}
+
+@media (min-width: 768px) {
+    .btn-camara-movil {
+        display: none !important;
+    }
+}

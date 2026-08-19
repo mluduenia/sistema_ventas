@@ -1,120 +1,198 @@
 <!DOCTYPE html>
-<html lang="es">
+<html lang="es" data-bs-theme="light">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}Sistema de Ventas{% endblock %}</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>{% block title %}Sistema POS{% endblock %}</title>
+
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- FontAwesome 6 Icons -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     
-    <!-- Bootstrap 5 -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
-    <!-- Font Awesome -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    
-    {% load static %}
-    <link rel="stylesheet" href="{% static 'css/style.css' %}">
-    
+    <!-- SDK Oficial de Mercado Pago V2 -->
+    <script src="https://sdk.mercadopago.com/js/v2"></script>
+
+    <!-- Custom Theme -->
+    <link rel="stylesheet" href="/static/css/custom.css">
+
     {% block extra_css %}{% endblock %}
 </head>
 <body>
-    <!-- Navbar -->
-    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
-        <div class="container-fluid">
-            <a class="navbar-brand" href="{% url 'core:dashboard' %}">
-                <i class="fas fa-store"></i> Sistema de Ventas
-            </a>
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
-                <span class="navbar-toggler-icon"></span>
-            </button>
-            <div class="collapse navbar-collapse" id="navbarNav">
-                <ul class="navbar-nav me-auto">
-                    {% if user.is_authenticated %}
-                        <li class="nav-item">
-                            <a class="nav-link" href="{% url 'core:dashboard' %}">
-                                <i class="fas fa-home"></i> Dashboard
-                            </a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link" href="{% url 'ventas:lista_ventas' %}">
-                                <i class="fas fa-shopping-cart"></i> Ventas
-                            </a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link" href="{% url 'productos:lista_productos' %}">
-                                <i class="fas fa-boxes"></i> Productos
-                            </a>
-                        </li>
-                        {% if user.rol == 'admin' or user.is_superuser %}
-                        <li class="nav-item">
-                            <a class="nav-link" href="{% url 'usuarios:gestion_usuarios' %}">
-                                <i class="fas fa-users"></i> Usuarios
-                            </a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link" href="{% url 'configuracion:configuracion_general' %}">
-                                <i class="fas fa-cog"></i> Configuración
-                            </a>
-                        </li>
-                        {% endif %}
-                    {% endif %}
-                </ul>
-                <ul class="navbar-nav">
-                    {% if user.is_authenticated %}
-                        <li class="nav-item dropdown">
-                            <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
-                                <i class="fas fa-user"></i> {{ user.username }}
-                            </a>
-                            <ul class="dropdown-menu dropdown-menu-end">
-                                <li><a class="dropdown-item" href="{% url 'usuarios:perfil' %}">
-                                    <i class="fas fa-id-card"></i> Perfil
-                                </a></li>
-                                <li><hr class="dropdown-divider"></li>
-                                <li><a class="dropdown-item" href="{% url 'usuarios:logout' %}">
-                                    <i class="fas fa-sign-out-alt"></i> Cerrar Sesión
-                                </a></li>
-                            </ul>
-                        </li>
+
+<div class="d-flex min-vh-100">
+    <!-- SIDEBAR / MENÚ LATERAL (ESCRITORIO / PC) -->
+    <aside class="bg-dark text-white p-3 d-none d-md-flex flex-column justify-content-between" style="width: 240px; flex-shrink: 0;">
+        <div>
+            <!-- MARCA / LOGO DEL COMERCIO -->
+            <div class="d-flex align-items-center mb-4 px-2">
+                {% if configuracion and configuracion.logo %}
+                    <img src="{{ configuracion.logo.url }}" alt="Logo" class="me-2 rounded bg-white p-1" style="max-height: 38px; max-width: 45px; object-fit: contain;">
+                {% else %}
+                    <i class="fas fa-cube fa-lg text-primary me-2"></i>
+                {% endif %}
+                <span class="fs-6 fw-bold tracking-wide text-truncate" title="{% if configuracion %}{{ configuracion.nombre_fantasia|default:configuracion.razon_social }}{% else %}POS System{% endif %}">
+                    {% if configuracion %}
+                        {{ configuracion.nombre_fantasia|default:configuracion.razon_social }}
                     {% else %}
-                        <li class="nav-item">
-                            <a class="nav-link" href="{% url 'usuarios:login' %}">
-                                <i class="fas fa-sign-in-alt"></i> Iniciar Sesión
-                            </a>
-                        </li>
+                        POS System
                     {% endif %}
-                </ul>
+                </span>
+            </div>
+
+            <nav class="nav nav-pills flex-column gap-1">
+                <a href="{% url 'core:dashboard' %}" class="nav-link text-white-50 d-flex align-items-center gap-2 py-2 px-3 rounded">
+                    <i class="fas fa-chart-line w-20"></i> Dashboard
+                </a>
+                <a href="{% url 'ventas:pos' %}" class="nav-link text-white-50 d-flex align-items-center gap-2 py-2 px-3 rounded">
+                    <i class="fas fa-cash-register w-20"></i> Punto de Venta
+                </a>
+                <a href="{% url 'productos:lista_productos' %}" class="nav-link text-white-50 d-flex align-items-center gap-2 py-2 px-3 rounded">
+                    <i class="fas fa-boxes w-20"></i> Productos
+                </a>
+                <a href="{% url 'productos:lista_categorias' %}" class="nav-link text-white-50 d-flex align-items-center gap-2 py-2 px-3 rounded">
+                    <i class="fas fa-tags w-20"></i> Rubros
+                </a>
+                <a href="{% url 'productos:lista_proveedores' %}" class="nav-link text-white-50 d-flex align-items-center gap-2 py-2 px-3 rounded">
+                    <i class="fas fa-truck w-20"></i> Proveedores
+                </a>
+                <a href="{% url 'configuracion:configuracion_general' %}" class="nav-link text-white-50 d-flex align-items-center gap-2 py-2 px-3 rounded">
+                    <i class="fas fa-cog w-20"></i> Configuración
+                </a>
+                <a href="{% url 'ventas:cerrar_caja' %}" class="nav-link text-warning d-flex align-items-center gap-2 py-2 px-3 rounded mt-2">
+                    <i class="fas fa-calculator w-20"></i> Arqueo / Cerrar Turno
+                </a>
+            </nav>
+        </div>
+
+        <!-- Usuario & Logout en Escritorio -->
+        <div class="border-top border-secondary pt-3">
+            <div class="d-flex align-items-center justify-content-between px-2">
+                <span class="small text-white-50"><i class="fas fa-user me-1"></i> {{ request.user.username }}</span>
+                <a href="{% url 'usuarios:logout' %}" class="text-danger small" title="Cerrar Sesión">
+                    <i class="fas fa-sign-out-alt"></i> Salir
+                </a>
             </div>
         </div>
-    </nav>
+    </aside>
 
-    <!-- Mensajes -->
-    <div class="container mt-3">
-        {% if messages %}
-            {% for message in messages %}
-                <div class="alert alert-{{ message.tags }} alert-dismissible fade show">
-                    {{ message }}
-                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    <!-- CONTENIDO PRINCIPAL -->
+    <div class="flex-grow-1 d-flex flex-column w-100 overflow-hidden">
+        <!-- NAVBAR SUPERIOR -->
+        <header class="navbar navbar-expand border-bottom px-3 py-2 bg-body">
+            <div class="container-fluid p-0 d-flex justify-content-between align-items-center">
+                <div class="d-flex align-items-center gap-2">
+                    <button class="btn btn-sm btn-outline-secondary d-md-none" type="button" data-bs-toggle="offcanvas" data-bs-target="#mobileMenu">
+                        <i class="fas fa-bars"></i>
+                    </button>
+                    <!-- LOGO MÓVIL -->
+                    <div class="d-flex align-items-center d-md-none">
+                        {% if configuracion and configuracion.logo %}
+                            <img src="{{ configuracion.logo.url }}" alt="Logo" class="me-2 rounded" style="max-height: 28px; object-fit: contain;">
+                        {% endif %}
+                        <span class="fw-bold">
+                            {% if configuracion %}
+                                {{ configuracion.nombre_fantasia|default:configuracion.razon_social }}
+                            {% else %}
+                                POS System
+                            {% endif %}
+                        </span>
+                    </div>
                 </div>
-            {% endfor %}
-        {% endif %}
+
+                <div class="d-flex align-items-center gap-3">
+                    <button class="btn btn-link p-1 text-decoration-none shadow-none border-0" id="btnThemeToggle" title="Cambiar Tema" type="button">
+                        <i class="fas fa-moon fs-5" id="themeIcon"></i>
+                    </button>
+                    <a href="{% url 'usuarios:logout' %}" class="btn btn-sm btn-outline-danger d-md-none" title="Cerrar Sesión">
+                        <i class="fas fa-sign-out-alt me-1"></i> Salir
+                    </a>
+                </div>
+            </div>
+        </header>
+
+        <!-- CONTENIDO DE CADA PÁGINA -->
+        <main class="container-fluid p-2 p-sm-3 p-md-4 flex-grow-1 overflow-auto">
+            {% if messages %}
+                {% for message in messages %}
+                    <div class="alert alert-{{ message.tags }} alert-dismissible fade show shadow-sm" role="alert">
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                {% endfor %}
+            {% endif %}
+
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+</div>
+
+<!-- MENÚ DESPLEGABLE MÓVIL -->
+<div class="offcanvas offcanvas-start bg-body text-body d-flex flex-column justify-content-between border-end" tabindex="-1" id="mobileMenu" style="width: 260px;">
+    <div>
+        <div class="offcanvas-header border-bottom">
+            <h5 class="offcanvas-title fw-bold d-flex align-items-center">
+                {% if configuracion and configuracion.logo %}
+                    <img src="{{ configuracion.logo.url }}" alt="Logo" class="me-2 rounded" style="max-height: 30px; object-fit: contain;">
+                {% endif %}
+                {% if configuracion %}
+                    {{ configuracion.nombre_fantasia|default:configuracion.razon_social }}
+                {% else %}
+                    POS System
+                {% endif %}
+            </h5>
+            <button type="button" class="btn-close" data-bs-dismiss="offcanvas"></button>
+        </div>
+        <div class="offcanvas-body p-3">
+            <nav class="nav nav-pills flex-column gap-2">
+                <a href="{% url 'core:dashboard' %}" class="nav-link text-body py-2"><i class="fas fa-chart-line me-2 text-primary"></i> Dashboard</a>
+                <a href="{% url 'ventas:pos' %}" class="nav-link text-body py-2"><i class="fas fa-cash-register me-2 text-primary"></i> Punto de Venta</a>
+                <a href="{% url 'productos:lista_productos' %}" class="nav-link text-body py-2"><i class="fas fa-boxes me-2 text-primary"></i> Productos</a>
+                <a href="{% url 'productos:lista_categorias' %}" class="nav-link text-body py-2"><i class="fas fa-tags me-2 text-primary"></i> Rubros</a>
+                <a href="{% url 'productos:lista_proveedores' %}" class="nav-link text-body py-2"><i class="fas fa-truck me-2 text-primary"></i> Proveedores</a>
+                <a href="{% url 'configuracion:configuracion_general' %}" class="nav-link text-body py-2"><i class="fas fa-cog me-2 text-primary"></i> Configuración</a>
+                <a href="{% url 'ventas:cerrar_caja' %}" class="nav-link text-warning py-2"><i class="fas fa-calculator me-2"></i> Arqueo / Cerrar Turno</a>
+            </nav>
+        </div>
     </div>
 
-    <!-- Contenido principal -->
-    <main class="container mt-4">
-        {% block content %}{% endblock %}
-    </main>
-
-    <!-- Footer -->
-    <footer class="footer mt-5 py-3 bg-light">
-        <div class="container text-center">
-            <span class="text-muted">Sistema de Ventas v1.0 - {% now "Y" %}</span>
+    <div class="p-3 border-top bg-body-tertiary">
+        <div class="d-flex align-items-center justify-content-between">
+            <span class="small text-secondary fw-semibold"><i class="fas fa-user me-1"></i> {{ request.user.username }}</span>
+            <a href="{% url 'usuarios:logout' %}" class="btn btn-sm btn-danger fw-bold">
+                <i class="fas fa-sign-out-alt me-1"></i> Salir
+            </a>
         </div>
-    </footer>
+    </div>
+</div>
 
-    <!-- Scripts -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-    
-    <script src="{% static 'js/main.js' %}"></script>
-    
-    {% block extra_js %}{% endblock %}
+<!-- JS Bootstrap & Lógica Modo Día/Noche -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+    const htmlEl = document.documentElement;
+    const themeBtn = document.getElementById('btnThemeToggle');
+    const themeIcon = document.getElementById('themeIcon');
+
+    const currentTheme = localStorage.getItem('theme') || 'light';
+    htmlEl.setAttribute('data-bs-theme', currentTheme);
+    actualizarIconoTema(currentTheme);
+
+    themeBtn.addEventListener('click', () => {
+        const newTheme = htmlEl.getAttribute('data-bs-theme') === 'light' ? 'dark' : 'light';
+        htmlEl.setAttribute('data-bs-theme', newTheme);
+        localStorage.setItem('theme', newTheme);
+        actualizarIconoTema(newTheme);
+    });
+
+    function actualizarIconoTema(theme) {
+        if (theme === 'dark') {
+            themeIcon.className = 'fas fa-sun fs-5 text-warning';
+        } else {
+            themeIcon.className = 'fas fa-moon fs-5 text-secondary';
+        }
+    }
+</script>
+
+{% block extra_js %}{% endblock %}
 </body>
 </html>

@@ -1,0 +1,181 @@
+{% extends 'base.html' %}
+
+{% block title %}Configuración de Empresa{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center mb-5">
+    <div class="col-12 col-xl-10">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-body border-bottom py-3">
+                <h4 class="fw-bold mb-0 text-primary">
+                    <i class="fas fa-building me-2"></i> Configuración de Empresa y Facturación
+                </h4>
+            </div>
+            <div class="card-body p-4">
+                <form method="POST" enctype="multipart/form-data">
+                    {% csrf_token %}
+
+                    <!-- SECCIÓN LOGO -->
+                    <div class="card mb-4 border">
+                        <div class="card-header bg-body-tertiary fw-bold">
+                            <i class="fas fa-image me-2 text-primary"></i> Logo de la Empresa
+                        </div>
+                        <div class="card-body text-center p-3">
+                            {% if config.logo %}
+                                <img src="{{ config.logo.url }}" alt="Logo Empresa" class="img-thumbnail shadow-sm mb-3" style="max-height: 120px; object-fit: contain;">
+                            {% else %}
+                                <div class="p-3 text-muted border rounded bg-body mb-3">
+                                    <i class="fas fa-store fa-3x opacity-25 d-block mb-1"></i>
+                                    Sin logo cargado actualmente.
+                                </div>
+                            {% endif %}
+                            
+                            <div class="col-12 col-md-6 mx-auto text-start">
+                                <label class="form-label fw-semibold small text-secondary">Subir / Cambiar Logo</label>
+                                {{ form.logo }}
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- SECCIÓN DATOS COMERCIALES -->
+                    <div class="card mb-4 border">
+                        <div class="card-header bg-body-tertiary fw-bold">
+                            <i class="fas fa-id-card me-2 text-primary"></i> Datos Comerciales
+                        </div>
+                        <div class="card-body p-3">
+                            <div class="row g-3">
+                                <div class="col-12 col-md-6">
+                                    <label class="form-label fw-semibold">Razón Social *</label>
+                                    {{ form.razon_social }}
+                                </div>
+
+                                <div class="col-12 col-md-6">
+                                    <label class="form-label fw-semibold">Nombre Fantasía</label>
+                                    {{ form.nombre_fantasia }}
+                                </div>
+
+                                <div class="col-12 col-md-4">
+                                    <label class="form-label fw-semibold">CUIT *</label>
+                                    {{ form.cuit }}
+                                </div>
+
+                                <div class="col-12 col-md-4">
+                                    <label class="form-label fw-semibold">Condición IVA</label>
+                                    {{ form.condicion_iva }}
+                                </div>
+
+                                <div class="col-12 col-md-4">
+                                    <label class="form-label fw-semibold">Ingresos Brutos (IIBB)</label>
+                                    {{ form.iibb }}
+                                </div>
+
+                                <div class="col-12 col-md-4">
+                                    <label class="form-label fw-semibold">Inicio de Actividades</label>
+                                    {{ form.inicio_actividades }}
+                                </div>
+
+                                <div class="col-12 col-md-4">
+                                    <label class="form-label fw-semibold">Teléfono</label>
+                                    {{ form.telefono }}
+                                </div>
+
+                                <div class="col-12 col-md-4">
+                                    <label class="form-label fw-semibold">Email</label>
+                                    {{ form.email }}
+                                </div>
+
+                                <div class="col-12">
+                                    <label class="form-label fw-semibold">Dirección Comercial</label>
+                                    {{ form.direccion }}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- SECCIÓN SERVIDOR DE CORREO SMTP -->
+                    <div class="card mb-4 border">
+                        <div class="card-header bg-body-tertiary fw-bold">
+                            <i class="fas fa-envelope me-2 text-primary"></i> Configuración de Servidor de Correo (SMTP)
+                        </div>
+                        <div class="card-body p-3">
+                            <div class="row g-3">
+                                <div class="col-12 col-md-8">
+                                    <label class="form-label fw-semibold">Host SMTP</label>
+                                    {{ form.email_smtp_host }}
+                                </div>
+
+                                <div class="col-12 col-md-4">
+                                    <label class="form-label fw-semibold">Puerto SMTP</label>
+                                    {{ form.email_smtp_port }}
+                                </div>
+
+                                <div class="col-12 col-md-6">
+                                    <label class="form-label fw-semibold">Usuario / Correo Emisor</label>
+                                    {{ form.email_smtp_user }}
+                                </div>
+
+                                <div class="col-12 col-md-6">
+                                    <label class="form-label fw-semibold">Contraseña de Aplicación</label>
+                                    {{ form.email_smtp_password }}
+                                </div>
+
+                                <div class="col-12">
+                                    <div class="form-check form-switch mt-2">
+                                        {{ form.email_smtp_use_tls }}
+                                        <label class="form-check-label fw-semibold" for="{{ form.email_smtp_use_tls.id_for_label }}">
+                                            Usar TLS / Seguridad en conexión
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- SECCIÓN FACTURACIÓN ELECTRONICA ARCA / AFIP -->
+                    <div class="card mb-4 border">
+                        <div class="card-header bg-body-tertiary fw-bold">
+                            <i class="fas fa-file-invoice-dollar me-2 text-primary"></i> Facturación Electrónica (ARCA / AFIP)
+                        </div>
+                        <div class="card-body p-3">
+                            <div class="row g-3">
+                                <div class="col-12 col-md-6">
+                                    <label class="form-label fw-semibold">N° Punto de Venta Habilitado</label>
+                                    {{ form.punto_de_venta }}
+                                </div>
+
+                                <div class="col-12 col-md-6">
+                                    <label class="form-label fw-semibold">Ambiente de Operación</label>
+                                    {{ form.ambiente_arca }}
+                                </div>
+
+                                <div class="col-12 col-md-6">
+                                    <label class="form-label fw-semibold">Certificado Digital (.crt)</label>
+                                    {% if config.certificado_crt %}
+                                        <div class="small text-success mb-1"><i class="fas fa-check-circle"></i> Archivo subido: {{ config.certificado_crt.name }}</div>
+                                    {% endif %}
+                                    {{ form.certificado_crt }}
+                                </div>
+
+                                <div class="col-12 col-md-6">
+                                    <label class="form-label fw-semibold">Clave Privada (.key)</label>
+                                    {% if config.clave_privada_key %}
+                                        <div class="small text-success mb-1"><i class="fas fa-check-circle"></i> Archivo subido: {{ config.clave_privada_key.name }}</div>
+                                    {% endif %}
+                                    {{ form.clave_privada_key }}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- BOTÓN GUARDAR -->
+                    <div class="text-end mt-4">
+                        <button type="submit" class="btn btn-primary btn-lg fw-bold px-5 shadow-sm">
+                            <i class="fas fa-save me-2"></i> Guardar Configuración
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

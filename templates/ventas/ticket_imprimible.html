@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Ticket #{{ venta.id }}</title>
+    <style>
+        body { font-family: monospace; width: 280px; margin: 0 auto; padding: 10px; font-size: 12px; }
+        .text-center { text-align: center; }
+        .text-end { text-align: right; }
+        .line { border-bottom: 1px dashed #000; margin: 5px 0; }
+        table { width: 100%; font-size: 11px; }
+        @media print { @page { margin: 0; } body { width: 100%; } }
+    </style>
+</head>
+<body onload="window.print()">
+    <div class="text-center">
+        <h2>{{ empresa.razon_social|default:"MI COMERCIO" }}</h2>
+        <p>{{ empresa.direccion|default:"" }}<br>CUIT: {{ empresa.cuit|default:"-" }}</p>
+    </div>
+    
+    <div class="line"></div>
+    <p>
+        <strong>Ticket Venta #{{ venta.id }}</strong><br>
+        Fecha: {{ venta.fecha|date:"d/m/Y H:i" }} hs<br>
+        Atendió: {{ venta.vendedor.username }}<br>
+        Cliente: {{ venta.cliente.nombre|default:"Consumidor Final" }}
+    </p>
+    <div class="line"></div>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Cant - Prod</th>
+                <th class="text-end">Total</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in venta.detalles.all %}
+            <tr>
+                <td>{{ item.cantidad }}x {{ item.producto.nombre }}</td>
+                <td class="text-end">${{ item.subtotal }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <div class="line"></div>
+    <p class="text-end" style="font-size: 14px;">
+        <strong>TOTAL: ${{ venta.total }}</strong>
+    </p>
+    <p>Método de Pago: {{ venta.get_metodo_pago_display }}</p>
+    <div class="line"></div>
+
+    <div class="text-center" style="margin-top: 15px;">
+        <p>¡Gracias por su compra!</p>
+    </div>
+</body>
+</html>
