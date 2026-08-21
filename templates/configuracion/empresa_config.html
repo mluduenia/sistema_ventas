@@ -12,6 +12,16 @@
                 </h4>
             </div>
             <div class="card-body p-4">
+
+                <!-- ALERTAS DE ERRORES GENERALES DEL FORMULARIO -->
+                {% if form.errors %}
+                    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                        <i class="fas fa-exclamation-triangle me-2"></i>
+                        <strong>Atención:</strong> Revisa los campos resaltados a continuación.
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    </div>
+                {% endif %}
+
                 <form method="POST" enctype="multipart/form-data">
                     {% csrf_token %}
 
@@ -33,6 +43,9 @@
                             <div class="col-12 col-md-6 mx-auto text-start">
                                 <label class="form-label fw-semibold small text-secondary">Subir / Cambiar Logo</label>
                                 {{ form.logo }}
+                                {% if form.logo.errors %}
+                                    <div class="text-danger small mt-1">{{ form.logo.errors|striptags }}</div>
+                                {% endif %}
                             </div>
                         </div>
                     </div>
@@ -47,46 +60,55 @@
                                 <div class="col-12 col-md-6">
                                     <label class="form-label fw-semibold">Razón Social *</label>
                                     {{ form.razon_social }}
+                                    {% if form.razon_social.errors %}<div class="text-danger small mt-1">{{ form.razon_social.errors|striptags }}</div>{% endif %}
                                 </div>
 
                                 <div class="col-12 col-md-6">
                                     <label class="form-label fw-semibold">Nombre Fantasía</label>
                                     {{ form.nombre_fantasia }}
+                                    {% if form.nombre_fantasia.errors %}<div class="text-danger small mt-1">{{ form.nombre_fantasia.errors|striptags }}</div>{% endif %}
                                 </div>
 
                                 <div class="col-12 col-md-4">
                                     <label class="form-label fw-semibold">CUIT *</label>
                                     {{ form.cuit }}
+                                    {% if form.cuit.errors %}<div class="text-danger small mt-1">{{ form.cuit.errors|striptags }}</div>{% endif %}
                                 </div>
 
                                 <div class="col-12 col-md-4">
                                     <label class="form-label fw-semibold">Condición IVA</label>
                                     {{ form.condicion_iva }}
+                                    {% if form.condicion_iva.errors %}<div class="text-danger small mt-1">{{ form.condicion_iva.errors|striptags }}</div>{% endif %}
                                 </div>
 
                                 <div class="col-12 col-md-4">
                                     <label class="form-label fw-semibold">Ingresos Brutos (IIBB)</label>
                                     {{ form.iibb }}
+                                    {% if form.iibb.errors %}<div class="text-danger small mt-1">{{ form.iibb.errors|striptags }}</div>{% endif %}
                                 </div>
 
                                 <div class="col-12 col-md-4">
                                     <label class="form-label fw-semibold">Inicio de Actividades</label>
                                     {{ form.inicio_actividades }}
+                                    {% if form.inicio_actividades.errors %}<div class="text-danger small mt-1">{{ form.inicio_actividades.errors|striptags }}</div>{% endif %}
                                 </div>
 
                                 <div class="col-12 col-md-4">
                                     <label class="form-label fw-semibold">Teléfono</label>
                                     {{ form.telefono }}
+                                    {% if form.telefono.errors %}<div class="text-danger small mt-1">{{ form.telefono.errors|striptags }}</div>{% endif %}
                                 </div>
 
                                 <div class="col-12 col-md-4">
                                     <label class="form-label fw-semibold">Email</label>
                                     {{ form.email }}
+                                    {% if form.email.errors %}<div class="text-danger small mt-1">{{ form.email.errors|striptags }}</div>{% endif %}
                                 </div>
 
                                 <div class="col-12">
                                     <label class="form-label fw-semibold">Dirección Comercial</label>
                                     {{ form.direccion }}
+                                    {% if form.direccion.errors %}<div class="text-danger small mt-1">{{ form.direccion.errors|striptags }}</div>{% endif %}
                                 </div>
                             </div>
                         </div>
@@ -102,21 +124,25 @@
                                 <div class="col-12 col-md-8">
                                     <label class="form-label fw-semibold">Host SMTP</label>
                                     {{ form.email_smtp_host }}
+                                    {% if form.email_smtp_host.errors %}<div class="text-danger small mt-1">{{ form.email_smtp_host.errors|striptags }}</div>{% endif %}
                                 </div>
 
                                 <div class="col-12 col-md-4">
                                     <label class="form-label fw-semibold">Puerto SMTP</label>
                                     {{ form.email_smtp_port }}
+                                    {% if form.email_smtp_port.errors %}<div class="text-danger small mt-1">{{ form.email_smtp_port.errors|striptags }}</div>{% endif %}
                                 </div>
 
                                 <div class="col-12 col-md-6">
                                     <label class="form-label fw-semibold">Usuario / Correo Emisor</label>
                                     {{ form.email_smtp_user }}
+                                    {% if form.email_smtp_user.errors %}<div class="text-danger small mt-1">{{ form.email_smtp_user.errors|striptags }}</div>{% endif %}
                                 </div>
 
                                 <div class="col-12 col-md-6">
                                     <label class="form-label fw-semibold">Contraseña de Aplicación</label>
                                     {{ form.email_smtp_password }}
+                                    {% if form.email_smtp_password.errors %}<div class="text-danger small mt-1">{{ form.email_smtp_password.errors|striptags }}</div>{% endif %}
                                 </div>
 
                                 <div class="col-12">
@@ -126,6 +152,7 @@
                                             Usar TLS / Seguridad en conexión
                                         </label>
                                     </div>
+                                    {% if form.email_smtp_use_tls.errors %}<div class="text-danger small mt-1">{{ form.email_smtp_use_tls.errors|striptags }}</div>{% endif %}
                                 </div>
                             </div>
                         </div>
@@ -141,27 +168,35 @@
                                 <div class="col-12 col-md-6">
                                     <label class="form-label fw-semibold">N° Punto de Venta Habilitado</label>
                                     {{ form.punto_de_venta }}
+                                    {% if form.punto_de_venta.errors %}<div class="text-danger small mt-1">{{ form.punto_de_venta.errors|striptags }}</div>{% endif %}
                                 </div>
 
                                 <div class="col-12 col-md-6">
                                     <label class="form-label fw-semibold">Ambiente de Operación</label>
                                     {{ form.ambiente_arca }}
+                                    {% if form.ambiente_arca.errors %}<div class="text-danger small mt-1">{{ form.ambiente_arca.errors|striptags }}</div>{% endif %}
                                 </div>
 
                                 <div class="col-12 col-md-6">
                                     <label class="form-label fw-semibold">Certificado Digital (.crt)</label>
                                     {% if config.certificado_crt %}
-                                        <div class="small text-success mb-1"><i class="fas fa-check-circle"></i> Archivo subido: {{ config.certificado_crt.name }}</div>
+                                        <div class="small text-success mb-1">
+                                            <i class="fas fa-check-circle"></i> Archivo asignado: <strong>{{ config.certificado_crt.name }}</strong>
+                                        </div>
                                     {% endif %}
                                     {{ form.certificado_crt }}
+                                    {% if form.certificado_crt.errors %}<div class="text-danger small mt-1">{{ form.certificado_crt.errors|striptags }}</div>{% endif %}
                                 </div>
 
                                 <div class="col-12 col-md-6">
                                     <label class="form-label fw-semibold">Clave Privada (.key)</label>
                                     {% if config.clave_privada_key %}
-                                        <div class="small text-success mb-1"><i class="fas fa-check-circle"></i> Archivo subido: {{ config.clave_privada_key.name }}</div>
+                                        <div class="small text-success mb-1">
+                                            <i class="fas fa-check-circle"></i> Archivo asignado: <strong>{{ config.clave_privada_key.name }}</strong>
+                                        </div>
                                     {% endif %}
                                     {{ form.clave_privada_key }}
+                                    {% if form.clave_privada_key.errors %}<div class="text-danger small mt-1">{{ form.clave_privada_key.errors|striptags }}</div>{% endif %}
                                 </div>
                             </div>
                         </div>
