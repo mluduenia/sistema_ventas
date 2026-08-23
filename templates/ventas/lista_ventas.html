@@ -1,72 +1,204 @@
 {% extends 'base.html' %}
 
-{% block title %}Historial de Ventas{% endblock %}
+{% block title %}Consulta de Ventas{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <h3 class="fw-bold mb-0">
-        <i class="fas fa-history text-primary me-2"></i> Historial de Ventas
-    </h3>
-    <div class="d-flex align-items-center gap-2">
-        <span class="badge bg-success-subtle text-success border border-success-subtle px-3 py-2" id="indicadorAutoUpdate">
-            <i class="fas fa-sync-alt fa-spin me-1"></i> En vivo
-        </span>
-        <a href="{% url 'ventas:pos' %}" class="btn btn-primary fw-bold shadow-sm">
-            <i class="fas fa-cash-register me-1"></i> Ir al POS
-        </a>
+<style>
+    @media print {
+        .sidebar, navbar, .btn, form, footer, .no-print { display: none !important; }
+        body { background-color: #fff !important; }
+        .card { border: 1px solid #ddd !important; box-shadow: none !important; }
+    }
+</style>
+
+<!-- ACCIONES SUPERIORES -->
+<div class="d-flex align-items-center justify-content-between mb-4 no-print">
+    <h4 class="fw-bold mb-0 text-body">
+        <i class="fas fa-list-alt text-primary me-2"></i> Historial y Consulta de Ventas
+    </h4>
+    <div class="d-flex gap-2">
+        <button id="btn-excel-ventas" type="button" class="btn btn-success fw-semibold">
+            <i class="fas fa-file-excel me-1"></i> Exportar a Excel
+        </button>
+        <button onclick="window.print()" type="button" class="btn btn-danger fw-semibold">
+            <i class="fas fa-file-pdf me-1"></i> Imprimir Listado
+        </button>
     </div>
 </div>
 
-<!-- TABLA DE VENTAS EN VIVO -->
+<!-- FILTROS DE BÚSQUEDA -->
+<div class="card border-0 shadow-sm mb-4 no-print">
+    <div class="card-body">
+        <form method="GET" action="{% url 'ventas:lista_ventas' %}" class="row g-3">
+            <!-- Búsqueda General -->
+            <div class="col-12 col-md-3">
+                <label class="form-label small fw-bold text-secondary">Búsqueda General</label>
+                <input type="text" name="q" value="{{ query }}" class="form-control" placeholder="N° Venta, Cliente, Vendedor...">
+            </div>
+
+            <!-- Método de Pago -->
+            <div class="col-12 col-md-3">
+                <label class="form-label small fw-bold text-secondary">Medio de Pago</label>
+                <select name="metodo_pago" class="form-select">
+                    <option value="">Todos los medios</option>
+                    <option value="EFECTIVO" {% if metodo_pago == 'EFECTIVO' %}selected{% endif %}>Efectivo</option>
+                    <option value="TRANSFERENCIA" {% if metodo_pago == 'TRANSFERENCIA' %}selected{% endif %}>Mercado Pago / Transferencia</option>
+                    <option value="TARJETA_CREDITO" {% if metodo_pago == 'TARJETA_CREDITO' %}selected{% endif %}>Tarjeta de Crédito</option>
+                    <option value="TARJETA_DEBITO" {% if metodo_pago == 'TARJETA_DEBITO' %}selected{% endif %}>Tarjeta de Débito</option>
+                </select>
+            </div>
+
+            <!-- Fechas -->
+            <div class="col-6 col-md-2">
+                <label class="form-label small fw-bold text-secondary">Desde</label>
+                <input type="date" name="fecha_desde" value="{{ fecha_desde }}" class="form-control">
+            </div>
+            <div class="col-6 col-md-2">
+                <label class="form-label small fw-bold text-secondary">Hasta</label>
+                <input type="date" name="fecha_hasta" value="{{ fecha_hasta }}" class="form-control">
+            </div>
+
+            <!-- Mes y Año -->
+            <div class="col-6 col-md-1">
+                <label class="form-label small fw-bold text-secondary">Mes</label>
+                <select name="mes" class="form-select">
+                    <option value="">--</option>
+                    <option value="1" {% if mes == '1' %}selected{% endif %}>01</option>
+                    <option value="2" {% if mes == '2' %}selected{% endif %}>02</option>
+                    <option value="3" {% if mes == '3' %}selected{% endif %}>03</option>
+                    <option value="4" {% if mes == '4' %}selected{% endif %}>04</option>
+                    <option value="5" {% if mes == '5' %}selected{% endif %}>05</option>
+                    <option value="6" {% if mes == '6' %}selected{% endif %}>06</option>
+                    <option value="7" {% if mes == '7' %}selected{% endif %}>07</option>
+                    <option value="8" {% if mes == '8' %}selected{% endif %}>08</option>
+                    <option value="9" {% if mes == '9' %}selected{% endif %}>09</option>
+                    <option value="10" {% if mes == '10' %}selected{% endif %}>10</option>
+                    <option value="11" {% if mes == '11' %}selected{% endif %}>11</option>
+                    <option value="12" {% if mes == '12' %}selected{% endif %}>12</option>
+                </select>
+            </div>
+            <div class="col-6 col-md-1">
+                <label class="form-label small fw-bold text-secondary">Año</label>
+                <select name="anio" class="form-select">
+                    <option value="">--</option>
+                    {% for a in anios_disponibles %}
+                        <option value="{{ a }}" {% if anio == a|stringformat:"i" %}selected{% endif %}>{{ a }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <!-- Botones -->
+            <div class="col-12 d-flex justify-content-end gap-2">
+                <a href="{% url 'ventas:lista_ventas' %}" class="btn btn-outline-secondary fw-semibold">
+                    <i class="fas fa-undo me-1"></i> Limpiar
+                </a>
+                <button type="submit" class="btn btn-primary fw-semibold">
+                    <i class="fas fa-filter me-1"></i> Filtrar
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- TABLA DE VENTAS -->
 <div class="card border-0 shadow-sm">
     <div class="card-body p-0">
         <div class="table-responsive">
-            <table class="table table-hover align-middle mb-0">
+            <table id="tabla-ventas" class="table table-hover align-middle mb-0">
                 <thead>
                     <tr>
-                        <th class="ps-3">ID</th>
-                        <th>Fecha y Hora</th>
-                        <th>Cliente</th>
-                        <th>Vendedor</th>
-                        <th>Método de Pago</th>
-                        <th>Total</th>
-                        <th class="text-center pe-3">Acciones</th>
+                        <th class="ps-3 py-2">N° VENTA</th>
+                        <th class="py-2">FECHA Y HORA</th>
+                        <th class="py-2">CLIENTE</th>
+                        <th class="py-2">VENDEDOR</th>
+                        <th class="py-2">MEDIO DE PAGO</th>
+                        <th class="text-end py-2">TOTAL</th>
+                        <th class="text-center pe-3 py-2 no-print">ACCIONES</th>
                     </tr>
                 </thead>
-                <tbody id="contenedorTablaVentas">
-                    {% include 'ventas/tabla_ventas_partial.html' %}
+                <tbody>
+                    {% for venta in page_obj %}
+                    <tr>
+                        <td class="ps-3 fw-bold text-primary">#{{ venta.id }}</td>
+                        <td>{{ venta.fecha|date:"d/m/Y H:i" }}</td>
+                        <td>{{ venta.cliente.nombre|default:"Consumidor Final" }}</td>
+                        <td>{{ venta.vendedor.username|default:"Caja" }}</td>
+                        <td>
+                            {% if venta.metodo_pago == 'EFECTIVO' %}
+                                <span class="badge bg-success-subtle text-success border border-success-subtle">Efectivo</span>
+                            {% elif venta.metodo_pago == 'TRANSFERENCIA' %}
+                                <span class="badge bg-primary-subtle text-primary border border-primary-subtle">Mercado Pago</span>
+                            {% else %}
+                                <span class="badge bg-info-subtle text-info border border-info-subtle">{{ venta.get_metodo_pago_display|default:venta.metodo_pago }}</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-end fw-bold text-success">${{ venta.total|floatformat:2 }}</td>
+                        <td class="text-center pe-3 no-print">
+                            <a href="{% url 'ventas:comprobante_ticket' venta.id %}" target="_blank" class="btn btn-sm btn-outline-secondary" title="Reimprimir Ticket">
+                                <i class="fas fa-print"></i> Ticket
+                            </a>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="7" class="text-center text-muted py-4">
+                            No se encontraron ventas registradas con los filtros ingresados.
+                        </td>
+                    </tr>
+                    {% endfor %}
                 </tbody>
             </table>
         </div>
     </div>
+    
+    <!-- PAGINACIÓN -->
+    {% if page_obj.has_other_pages %}
+    <div class="card-footer bg-body py-3 d-flex justify-content-center no-print">
+        <ul class="pagination mb-0">
+            {% if page_obj.has_previous %}
+                <li class="page-item"><a class="page-link" href="?page={{ page_obj.previous_page_number }}&q={{ query }}&fecha_desde={{ fecha_desde }}&fecha_hasta={{ fecha_hasta }}&mes={{ mes }}&anio={{ anio }}&metodo_pago={{ metodo_pago }}">Anterior</a></li>
+            {% endif %}
+            
+            <li class="page-item active"><span class="page-link">{{ page_obj.number }} de {{ page_obj.paginator.num_pages }}</span></li>
+
+            {% if page_obj.has_next %}
+                <li class="page-item"><a class="page-link" href="?page={{ page_obj.next_page_number }}&q={{ query }}&fecha_desde={{ fecha_desde }}&fecha_hasta={{ fecha_hasta }}&mes={{ mes }}&anio={{ anio }}&metodo_pago={{ metodo_pago }}">Siguiente</a></li>
+            {% endif %}
+        </ul>
+    </div>
+    {% endif %}
 </div>
-{% endblock %}
 
-{% block extra_js %}
+<!-- SCRIPT DE EXPORTACIÓN A EXCEL/CSV -->
 <script>
-    document.addEventListener("DOMContentLoaded", function () {
-        const contenedorTabla = document.getElementById('contenedorTablaVentas');
+document.addEventListener('DOMContentLoaded', function() {
+    const btnExcel = document.getElementById('btn-excel-ventas');
+    if (btnExcel) {
+        btnExcel.addEventListener('click', function() {
+            let csvContent = "\uFEFF";
+            const tabla = document.getElementById('tabla-ventas');
+            const filas = tabla.querySelectorAll('tr');
 
-        function actualizarVentasEnVivo() {
-            fetch("{% url 'ventas:lista_ventas' %}", {
-                headers: {
-                    'X-Requested-With': 'XMLHttpRequest'
-                }
-            })
-            .then(response => {
-                if (response.ok) {
-                    return response.text();
-                }
-                throw new Error('Error en respuesta');
-            })
-            .then(htmlPartial => {
-                contenedorTabla.innerHTML = htmlPartial;
-            })
-            .catch(error => console.log('Sincronizando ventas...', error));
-        }
+            filas.forEach(fila => {
+                const celdas = fila.querySelectorAll('th:not(.no-print), td:not(.no-print)');
+                const filaData = [];
+                celdas.forEach(celda => {
+                    let texto = celda.innerText.replace(/(\r\n|\n|\r)/gm, ' ').replace(/"/g, '""').trim();
+                    filaData.push('"' + texto + '"');
+                });
+                if (filaData.length > 0) csvContent += filaData.join(';') + '\r\n';
+            });
 
-        // Consultar automáticamente cada 3 segundos
-        setInterval(actualizarVentasEnVivo, 3000);
-    });
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.setAttribute('href', url);
+            link.setAttribute('download', 'Listado_Ventas.csv');
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        });
+    }
+});
 </script>
 {% endblock %}

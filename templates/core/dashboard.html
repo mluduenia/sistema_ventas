@@ -96,7 +96,8 @@
                         <th>CLIENTE</th>
                         <th>VENDEDOR</th>
                         <th>MÉTODO DE PAGO</th>
-                        <th class="text-end pe-3">TOTAL</th>
+                        <th class="text-end">TOTAL</th>
+                        <th class="text-center pe-3">ACCIONES</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -105,7 +106,7 @@
                         <!-- N° Venta -->
                         <td class="ps-3 fw-bold text-primary">#{{ venta.id }}</td>
 
-                        <!-- Fecha y Hora limpia (Sin la palabra 'hs' estática) -->
+                        <!-- Fecha y Hora -->
                         <td>
                             {% if venta.fecha %}
                                 {{ venta.fecha|date:"d/m/Y H:i" }}
@@ -139,13 +140,33 @@
                         </td>
 
                         <!-- Total -->
-                        <td class="text-end pe-3 fw-bold text-success fs-6">
+                        <td class="text-end fw-bold text-success fs-6">
                             ${{ venta.total|floatformat:2 }}
+                        </td>
+
+                        <!-- Acciones: Reimpresión de Ticket o Factura -->
+                        <td class="text-center pe-3">
+                            <div class="btn-group btn-group-sm" role="group">
+                                <!-- Botón Ticket -->
+                                <a href="{% url 'ventas:comprobante_ticket' venta.id %}" 
+                                   target="_blank" 
+                                   class="btn btn-light border text-secondary" 
+                                   title="Imprimir Ticket">
+                                    <i class="fas fa-receipt"></i>
+                                </a>
+                                <!-- Botón Factura A4 -->
+                                <a href="{% url 'ventas:comprobante_factura' venta.id %}" 
+                                   target="_blank" 
+                                   class="btn btn-light border text-primary" 
+                                   title="Imprimir Factura">
+                                    <i class="fas fa-file-invoice"></i>
+                                </a>
+                            </div>
                         </td>
                     </tr>
                     {% empty %}
                     <tr>
-                        <td colspan="6" class="text-center text-muted py-4">
+                        <td colspan="7" class="text-center text-muted py-4">
                             No se han registrado ventas aún.
                         </td>
                     </tr>

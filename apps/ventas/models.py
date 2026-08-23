@@ -114,6 +114,15 @@ class Venta(models.Model):
         max_length=20, choices=METODOS_PAGO, default="EFECTIVO"
     )
 
+    # ========== NUEVOS CAMPOS AGREGADOS ==========
+    monto_recibido = models.DecimalField(
+        "Monto Recibido", max_digits=10, decimal_places=2, default=0.0
+    )
+    vuelto = models.DecimalField(
+        "Vuelto", max_digits=10, decimal_places=2, default=0.0
+    )
+    # =============================================
+
     # CAMPOS NUEVOS: Facturación Electrónica ARCA / AFIP
     tipo_comprobante = models.IntegerField(
         "Tipo de Comprobante", choices=TIPOS_COMPROBANTE, default=6

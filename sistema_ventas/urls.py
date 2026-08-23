@@ -5,7 +5,7 @@ from django.conf.urls.static import static
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('', include('apps.core.urls')),  # Captura la raíz vacía ""
+    path('', include('apps.core.urls')),  # Carga el Dashboard en la raíz
     path('ventas/', include('apps.ventas.urls')),
     path('productos/', include('apps.productos.urls')),
     path('usuarios/', include('apps.usuarios.urls')),

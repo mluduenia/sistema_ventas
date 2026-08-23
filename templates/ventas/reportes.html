@@ -1,0 +1,267 @@
+{% extends 'base.html' %}
+
+{% block title %}Reportes y Estadísticas{% endblock %}
+
+{% block content %}
+<style>
+    @media print {
+        .sidebar, navbar, .btn, form, footer, .no-print, .main-header { display: none !important; }
+        body { background-color: #fff !important; padding: 0 !important; margin: 0 !important; }
+        .card { border: 1px solid #ddd !important; box-shadow: none !important; margin-bottom: 20px !important; page-break-inside: avoid; }
+    }
+</style>
+
+<!-- BARRA SUPERIOR CON ACCIONES -->
+<div class="d-flex align-items-center justify-content-between mb-4 no-print">
+    <h4 class="fw-bold mb-0 text-body">
+        <i class="fas fa-chart-line text-primary me-2"></i> Reportes y Estadísticas
+    </h4>
+    <div class="d-flex gap-2">
+        <button id="btn-excel" type="button" class="btn btn-success fw-semibold">
+            <i class="fas fa-file-excel me-1"></i> Exportar a Excel
+        </button>
+        <button onclick="window.print()" type="button" class="btn btn-danger fw-semibold">
+            <i class="fas fa-file-pdf me-1"></i> Imprimir / Guardar PDF
+        </button>
+    </div>
+</div>
+
+<!-- FILTRO DE PERÍODO -->
+<div class="card border-0 shadow-sm mb-4 no-print">
+    <div class="card-body py-3">
+        <form method="GET" class="row g-2 align-items-center">
+            <div class="col-auto">
+                <label class="fw-bold small text-secondary">Período:</label>
+            </div>
+            <div class="col-auto">
+                <select name="mes" class="form-select form-select-sm">
+                    <option value="1" {% if mes_sel == 1 %}selected{% endif %}>Enero</option>
+                    <option value="2" {% if mes_sel == 2 %}selected{% endif %}>Febrero</option>
+                    <option value="3" {% if mes_sel == 3 %}selected{% endif %}>Marzo</option>
+                    <option value="4" {% if mes_sel == 4 %}selected{% endif %}>Abril</option>
+                    <option value="5" {% if mes_sel == 5 %}selected{% endif %}>Mayo</option>
+                    <option value="6" {% if mes_sel == 6 %}selected{% endif %}>Junio</option>
+                    <option value="7" {% if mes_sel == 7 %}selected{% endif %}>Julio</option>
+                    <option value="8" {% if mes_sel == 8 %}selected{% endif %}>Agosto</option>
+                    <option value="9" {% if mes_sel == 9 %}selected{% endif %}>Septiembre</option>
+                    <option value="10" {% if mes_sel == 10 %}selected{% endif %}>Octubre</option>
+                    <option value="11" {% if mes_sel == 11 %}selected{% endif %}>Noviembre</option>
+                    <option value="12" {% if mes_sel == 12 %}selected{% endif %}>Diciembre</option>
+                </select>
+            </div>
+            <div class="col-auto">
+                <select name="anio" class="form-select form-select-sm">
+                    {% for a in anios_disponibles %}
+                        <option value="{{ a }}" {% if anio_sel == a %}selected{% endif %}>{{ a }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-auto">
+                <button type="submit" class="btn btn-sm btn-primary fw-semibold">
+                    <i class="fas fa-sync-alt me-1"></i> Actualizar
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- TARJETAS DE MÉTRICAS MANTENIMIENTO Y GANANCIA -->
+<div class="row g-3 mb-4">
+    <div class="col-12 col-md-3">
+        <div class="card border-0 shadow-sm p-3 border-start border-4 border-success h-100">
+            <span class="text-muted small fw-bold text-uppercase">Facturación Mensual</span>
+            <h3 class="fw-bold text-success mb-0">${{ total_recaudado|floatformat:2 }}</h3>
+        </div>
+    </div>
+    <div class="col-12 col-md-3">
+        <div class="card border-0 shadow-sm p-3 border-start border-4 border-info h-100">
+            <span class="text-muted small fw-bold text-uppercase">Ganancia Real Bruta</span>
+            <h3 class="fw-bold text-info mb-0">${{ ganancia_real|floatformat:2 }}</h3>
+            <span class="small text-muted mt-1">Margen: <strong>{{ margen_porcentaje|floatformat:1 }}%</strong></span>
+        </div>
+    </div>
+    <div class="col-12 col-md-3">
+        <div class="card border-0 shadow-sm p-3 border-start border-4 border-primary h-100">
+            <span class="text-muted small fw-bold text-uppercase">Operaciones</span>
+            <h3 class="fw-bold text-primary mb-0">{{ total_operaciones }}</h3>
+        </div>
+    </div>
+    <div class="col-12 col-md-3">
+        <div class="card border-0 shadow-sm p-3 border-start border-4 border-warning h-100">
+            <span class="text-muted small fw-bold text-uppercase">Ticket Promedio</span>
+            <h3 class="fw-bold text-warning mb-0">
+                {% if total_operaciones > 0 %}
+                    ${{ total_recaudado|divisibleby:total_operaciones|default:0|floatformat:2 }}
+                {% else %}
+                    $0.00
+                {% endif %}
+            </h3>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4 mb-4">
+    <!-- MEDIOS DE PAGO Y COBRANZAS -->
+    <div class="col-12 col-lg-6">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-header bg-body py-3 border-bottom">
+                <h6 class="fw-bold mb-0"><i class="fas fa-wallet text-success me-2"></i> Desglose por Medios de Pago</h6>
+            </div>
+            <div class="card-body p-0">
+                <table class="table table-hover align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th class="ps-3 py-2">Método</th>
+                            <th class="text-center py-2">Transacciones</th>
+                            <th class="text-end pe-3 py-2">Monto Recaudado</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for pago in medios_pago %}
+                        <tr>
+                            <td class="ps-3 fw-semibold">
+                                <i class="fas fa-credit-card me-2 text-secondary"></i>{{ pago.metodo_pago }}
+                            </td>
+                            <td class="text-center">{{ pago.cantidad }}</td>
+                            <td class="text-end pe-3 fw-bold">${{ pago.total|floatformat:2 }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="3" class="text-center text-muted py-3">Sin registros en el período</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- PRODUCTOS MÁS VENDIDOS -->
+    <div class="col-12 col-lg-6">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-header bg-body py-3 border-bottom">
+                <h6 class="fw-bold mb-0"><i class="fas fa-box text-warning me-2"></i> Top 5 Productos Más Vendidos</h6>
+            </div>
+            <div class="card-body p-0">
+                <table class="table table-hover align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th class="ps-3 py-2">Producto</th>
+                            <th class="text-center py-2">Unidades</th>
+                            <th class="text-end pe-3 py-2">Subtotal</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in productos_top %}
+                        <tr>
+                            <td class="ps-3 fw-semibold">{{ item.producto__nombre }}</td>
+                            <td class="text-center">{{ item.unidades }}</td>
+                            <td class="text-end pe-3 fw-bold">${{ item.recaudado|floatformat:2 }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="3" class="text-center text-muted py-3">Sin datos en el período</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4">
+    <!-- PROVEEDORES MÁS DEMANDADOS -->
+    <div class="col-12 col-lg-6">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-header bg-body py-3 border-bottom">
+                <h6 class="fw-bold mb-0"><i class="fas fa-truck text-info me-2"></i> Top Proveedores Demandados</h6>
+            </div>
+            <div class="card-body p-0">
+                <table class="table table-hover align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th class="ps-3 py-2">Proveedor</th>
+                            <th class="text-center py-2">Unid. Vendidas</th>
+                            <th class="text-end pe-3 py-2">Monto Movido</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for prov in proveedores_top %}
+                        <tr>
+                            <td class="ps-3 fw-semibold">{{ prov.producto__proveedor__nombre_o_razon_social }}</td>
+                            <td class="text-center">{{ prov.unidades_vendidas }}</td>
+                            <td class="text-end pe-3 fw-bold">${{ prov.total_generado|floatformat:2 }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="3" class="text-center text-muted py-3">Sin datos en el período</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- RENDIMIENTO DE VENDEDORES -->
+    <div class="col-12 col-lg-6">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-header bg-body py-3 border-bottom">
+                <h6 class="fw-bold mb-0"><i class="fas fa-users text-primary me-2"></i> Ventas por Vendedor</h6>
+            </div>
+            <div class="card-body p-0">
+                <table class="table table-hover align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th class="ps-3 py-2">Vendedor</th>
+                            <th class="text-center py-2">Cant. Ventas</th>
+                            <th class="text-end pe-3 py-2">Monto Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for vend in vendedores_top %}
+                        <tr>
+                            <td class="ps-3 fw-semibold">{{ vend.vendedor__username|default:"Caja General" }}</td>
+                            <td class="text-center">{{ vend.ventas_count }}</td>
+                            <td class="text-end pe-3 fw-bold text-success">${{ vend.total_monto|floatformat:2 }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="3" class="text-center text-muted py-3">Sin registros</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const btnExcel = document.getElementById('btn-excel');
+    if (btnExcel) {
+        btnExcel.addEventListener('click', function() {
+            let csvContent = "\uFEFF";
+            const tablas = document.querySelectorAll('table');
+            
+            tablas.forEach((tabla) => {
+                const filas = tabla.querySelectorAll('tr');
+                filas.forEach(fila => {
+                    const celdas = fila.querySelectorAll('th, td');
+                    const filaData = [];
+                    celdas.forEach(celda => {
+                        let texto = celda.innerText.replace(/(\r\n|\n|\r)/gm, ' ').replace(/"/g, '""').trim();
+                        filaData.push('"' + texto + '"');
+                    });
+                    if (filaData.length > 0) csvContent += filaData.join(';') + '\r\n';
+                });
+                csvContent += '\r\n';
+            });
+
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.setAttribute('href', url);
+            link.setAttribute('download', 'Reporte_Ventas_{{ mes_sel }}_{{ anio_sel }}.csv');
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        });
+    }
+});
+</script>
+{% endblock %}

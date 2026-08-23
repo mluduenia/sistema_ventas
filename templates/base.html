@@ -17,6 +17,7 @@
     <link rel="stylesheet" href="/static/css/custom.css">
 
     {% block extra_css %}{% endblock %}
+    {% block extra_head %}{% endblock %}
 </head>
 <body>
 
@@ -41,26 +42,70 @@
             </div>
 
             <nav class="nav nav-pills flex-column gap-1">
-                <a href="{% url 'core:dashboard' %}" class="nav-link text-white-50 d-flex align-items-center gap-2 py-2 px-3 rounded">
+                <!-- Dashboard (Visible para Administradores y Superusuarios) -->
+                {% if request.user.is_superuser or 'Administrador' in request.user.groups.all|join:',' %}
+                <a href="{% url 'core:dashboard' %}" class="nav-link text-white-50 d-flex align-items-center gap-2 py-2 px-3 rounded {% if request.resolver_match.url_name == 'dashboard' %}active text-white{% endif %}">
                     <i class="fas fa-chart-line w-20"></i> Dashboard
                 </a>
-                <a href="{% url 'ventas:pos' %}" class="nav-link text-white-50 d-flex align-items-center gap-2 py-2 px-3 rounded">
-                    <i class="fas fa-cash-register w-20"></i> Punto de Venta
+                {% endif %}
+
+                <!-- Submenú Ventas (Todos los niveles) -->
+                <div class="nav-item">
+                    <a class="nav-link text-white-50 d-flex align-items-center justify-content-between py-2 px-3 rounded" data-bs-toggle="collapse" href="#submenuVentas" role="button" aria-expanded="false">
+                        <span class="d-flex align-items-center gap-2"><i class="fas fa-shopping-cart w-20"></i> Ventas</span>
+                        <i class="fas fa-chevron-down small"></i>
+                    </a>
+                    <div class="collapse {% if 'ventas' in request.path and 'reportes' not in request.path %}show{% endif %}" id="submenuVentas">
+                        <nav class="nav nav-pills flex-column ps-3 gap-1 mt-1">
+                            <a href="{% url 'ventas:pos' %}" class="nav-link text-white-50 py-1 px-3 rounded small {% if request.resolver_match.url_name == 'pos' %}active text-white{% endif %}">
+                                <i class="fas fa-cash-register me-2"></i> Punto de Venta
+                            </a>
+                            <a href="{% url 'ventas:lista_ventas' %}" class="nav-link text-white-50 py-1 px-3 rounded small {% if request.resolver_match.url_name == 'lista_ventas' %}active text-white{% endif %}">
+                                <i class="fas fa-list-alt me-2"></i> Consultar Historial
+                            </a>
+                        </nav>
+                    </div>
+                </div>
+
+                <!-- Submenú Stock / Catálogos (Todos leen, solo Admins/Super ven links avanzados si aplica) -->
+                <div class="nav-item">
+                    <a class="nav-link text-white-50 d-flex align-items-center justify-content-between py-2 px-3 rounded" data-bs-toggle="collapse" href="#submenuStock" role="button" aria-expanded="false">
+                        <span class="d-flex align-items-center gap-2"><i class="fas fa-boxes w-20"></i> Stock / Productos</span>
+                        <i class="fas fa-chevron-down small"></i>
+                    </a>
+                    <div class="collapse {% if 'productos' in request.path or 'stock' in request.path %}show{% endif %}" id="submenuStock">
+                        <nav class="nav nav-pills flex-column ps-3 gap-1 mt-1">
+                            <a href="{% url 'productos:lista_productos' %}" class="nav-link text-white-50 py-1 px-3 rounded small {% if request.resolver_match.url_name == 'lista_productos' %}active text-white{% endif %}">
+                                <i class="fas fa-box me-2"></i> Productos / Existencias
+                            </a>
+                            <a href="{% url 'productos:movimientos_stock' %}" class="nav-link text-white-50 py-1 px-3 rounded small {% if request.resolver_match.url_name == 'movimientos_stock' %}active text-white{% endif %}">
+                                <i class="fas fa-exchange-alt me-2"></i> Movimientos de Stock
+                            </a>
+                            <a href="{% url 'productos:lista_categorias' %}" class="nav-link text-white-50 py-1 px-3 rounded small {% if 'categorias' in request.path %}active text-white{% endif %}">
+                                <i class="fas fa-tags me-2"></i> Rubros / Categorías
+                            </a>
+                            <a href="{% url 'productos:lista_proveedores' %}" class="nav-link text-white-50 py-1 px-3 rounded small {% if 'proveedores' in request.path %}active text-white{% endif %}">
+                                <i class="fas fa-truck me-2"></i> Proveedores
+                            </a>
+                        </nav>
+                    </div>
+                </div>
+
+                <!-- Reportes y Estadísticas (Todos los niveles) -->
+                <a href="{% url 'ventas:reportes' %}" class="nav-link text-white-50 d-flex align-items-center gap-2 py-2 px-3 rounded {% if request.resolver_match.url_name == 'reportes' %}active text-white{% endif %}">
+                    <i class="fas fa-chart-bar w-20"></i> Reportes / Stats
                 </a>
-                <a href="{% url 'productos:lista_productos' %}" class="nav-link text-white-50 d-flex align-items-center gap-2 py-2 px-3 rounded">
-                    <i class="fas fa-boxes w-20"></i> Productos
-                </a>
-                <a href="{% url 'productos:lista_categorias' %}" class="nav-link text-white-50 d-flex align-items-center gap-2 py-2 px-3 rounded">
-                    <i class="fas fa-tags w-20"></i> Rubros
-                </a>
-                <a href="{% url 'productos:lista_proveedores' %}" class="nav-link text-white-50 d-flex align-items-center gap-2 py-2 px-3 rounded">
-                    <i class="fas fa-truck w-20"></i> Proveedores
-                </a>
-                <a href="{% url 'configuracion:configuracion_general' %}" class="nav-link text-white-50 d-flex align-items-center gap-2 py-2 px-3 rounded">
+
+                <!-- Configuración (Solo Admins y Superusuarios) -->
+                {% if request.user.is_superuser or 'Administrador' in request.user.groups.all|join:',' %}
+                <a href="{% url 'configuracion:configuracion_general' %}" class="nav-link text-white-50 d-flex align-items-center gap-2 py-2 px-3 rounded {% if 'configuracion' in request.path %}active text-white{% endif %}">
                     <i class="fas fa-cog w-20"></i> Configuración
                 </a>
+                {% endif %}
+
+                <!-- Abrir / Cerrar Caja (Todos los cajeros/admins) -->
                 <a href="{% url 'ventas:cerrar_caja' %}" class="nav-link text-warning d-flex align-items-center gap-2 py-2 px-3 rounded mt-2">
-                    <i class="fas fa-calculator w-20"></i> Arqueo / Cerrar Turno
+                    <i class="fas fa-calculator w-20"></i> Arqueo / Turno
                 </a>
             </nav>
         </div>
@@ -145,12 +190,27 @@
         </div>
         <div class="offcanvas-body p-3">
             <nav class="nav nav-pills flex-column gap-2">
+                {% if request.user.is_superuser or 'Administrador' in request.user.groups.all|join:',' %}
                 <a href="{% url 'core:dashboard' %}" class="nav-link text-body py-2"><i class="fas fa-chart-line me-2 text-primary"></i> Dashboard</a>
+                {% endif %}
+                
+                <!-- Ventas Móvil -->
                 <a href="{% url 'ventas:pos' %}" class="nav-link text-body py-2"><i class="fas fa-cash-register me-2 text-primary"></i> Punto de Venta</a>
-                <a href="{% url 'productos:lista_productos' %}" class="nav-link text-body py-2"><i class="fas fa-boxes me-2 text-primary"></i> Productos</a>
+                <a href="{% url 'ventas:lista_ventas' %}" class="nav-link text-body py-2"><i class="fas fa-list-alt me-2 text-primary"></i> Historial de Ventas</a>
+                
+                <!-- Stock Móvil -->
+                <a href="{% url 'productos:lista_productos' %}" class="nav-link text-body py-2"><i class="fas fa-boxes me-2 text-primary"></i> Productos / Stock</a>
+                <a href="{% url 'productos:movimientos_stock' %}" class="nav-link text-body py-2"><i class="fas fa-exchange-alt me-2 text-primary"></i> Movimientos de Stock</a>
                 <a href="{% url 'productos:lista_categorias' %}" class="nav-link text-body py-2"><i class="fas fa-tags me-2 text-primary"></i> Rubros</a>
                 <a href="{% url 'productos:lista_proveedores' %}" class="nav-link text-body py-2"><i class="fas fa-truck me-2 text-primary"></i> Proveedores</a>
+                
+                <!-- Extras Móvil -->
+                <a href="{% url 'ventas:reportes' %}" class="nav-link text-body py-2"><i class="fas fa-chart-bar me-2 text-primary"></i> Reportes y Estadísticas</a>
+                
+                {% if request.user.is_superuser or 'Administrador' in request.user.groups.all|join:',' %}
                 <a href="{% url 'configuracion:configuracion_general' %}" class="nav-link text-body py-2"><i class="fas fa-cog me-2 text-primary"></i> Configuración</a>
+                {% endif %}
+                
                 <a href="{% url 'ventas:cerrar_caja' %}" class="nav-link text-warning py-2"><i class="fas fa-calculator me-2"></i> Arqueo / Cerrar Turno</a>
             </nav>
         </div>
@@ -201,7 +261,7 @@
         }
     });
 
-    // Soporte táctil móvil (al tocar con el dedo en pantallas táctiles)
+    // Soporte táctil móvil
     document.addEventListener('mouseup', function (e) {
         if (e.target && (e.target.type === 'number' || e.target.classList.contains('input-cant') || e.target.classList.contains('input-num'))) {
             e.preventDefault();

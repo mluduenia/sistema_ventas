@@ -399,7 +399,7 @@ document.addEventListener('DOMContentLoaded', function () {
         renderizarCarrito();
     });
 
-    // PROCESAR VENTA AJAX (Llama a Django y abre el modal post-venta)
+    // PROCESAR VENTA AJAX
     btnProcesar.addEventListener('click', function () {
         if (carrito.length === 0) {
             alert('Por favor agrega al menos un producto al carrito antes de procesar.');
@@ -431,17 +431,19 @@ document.addEventListener('DOMContentLoaded', function () {
             btnProcesar.disabled = false;
             btnProcesar.innerHTML = '<i class="fas fa-check-circle me-2"></i> Procesar Venta';
 
-            if (data.success) {
+            // ✅ CORRECCIÓN: Cambiamos data.success por data.status === 'success'
+            if (data.status === 'success') {
                 carrito = [];
                 renderizarCarrito();
 
                 // Abrir modal de opciones post-venta
                 ultimaVentaId = data.venta_id;
                 modalVentaId.textContent = '#' + ultimaVentaId;
+                // Si la vista devuelve el email, lo asignamos
                 emailInput.value = data.cliente_email || '';
                 overlayPostVenta.style.display = 'flex';
             } else {
-                alert('Error al procesar la venta: ' + (data.error || 'Ocurrió un problema en el servidor.'));
+                alert('Error al procesar la venta: ' + (data.message || 'Ocurrió un problema en el servidor.'));
             }
         })
         .catch(err => {

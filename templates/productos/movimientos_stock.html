@@ -1,0 +1,160 @@
+{% extends 'base.html' %}
+
+{% block title %}Movimientos de Stock{% endblock %}
+
+{% block content %}
+<style>
+    @media print {
+        .sidebar, navbar, .btn, form, footer, .no-print { display: none !important; }
+        body { background-color: #fff !important; }
+        .card { border: 1px solid #ddd !important; box-shadow: none !important; }
+    }
+</style>
+
+<!-- ACCIONES SUPERIORES -->
+<div class="d-flex align-items-center justify-content-between mb-4 no-print">
+    <h4 class="fw-bold mb-0 text-body">
+        <i class="fas fa-exchange-alt text-primary me-2"></i> Movimientos de Stock
+    </h4>
+    <div class="d-flex gap-2">
+        <button id="btn-excel-movs" type="button" class="btn btn-success fw-semibold">
+            <i class="fas fa-file-excel me-1"></i> Exportar a Excel
+        </button>
+        <button onclick="window.print()" type="button" class="btn btn-danger fw-semibold">
+            <i class="fas fa-file-pdf me-1"></i> Imprimir Reporte
+        </button>
+    </div>
+</div>
+
+<!-- FILTROS -->
+<div class="card border-0 shadow-sm mb-4 no-print">
+    <div class="card-body">
+        <form method="GET" class="row g-3">
+            <div class="col-12 col-md-4">
+                <label class="form-label small fw-bold text-secondary">Buscar Producto / Motivo</label>
+                <input type="text" name="q" value="{{ query }}" class="form-control" placeholder="Nombre, Código o Detalle...">
+            </div>
+            <div class="col-12 col-md-3">
+                <label class="form-label small fw-bold text-secondary">Tipo de Movimiento</label>
+                <select name="tipo" class="form-select">
+                    <option value="">Todos los Tipos</option>
+                    <option value="INGRESO" {% if tipo_mov == 'INGRESO' %}selected{% endif %}>Ingreso / Carga (+)</option>
+                    <option value="EGRESO" {% if tipo_mov == 'EGRESO' %}selected{% endif %}>Egreso / Descarga (-)</option>
+                    <option value="AJUSTE" {% if tipo_mov == 'AJUSTE' %}selected{% endif %}>Ajuste de Inventario</option>
+                    <option value="VENTA" {% if tipo_mov == 'VENTA' %}selected{% endif %}>Venta en POS (-)</option>
+                </select>
+            </div>
+            <div class="col-6 col-md-2">
+                <label class="form-label small fw-bold text-secondary">Desde</label>
+                <input type="date" name="fecha_desde" value="{{ fecha_desde }}" class="form-control">
+            </div>
+            <div class="col-6 col-md-2">
+                <label class="form-label small fw-bold text-secondary">Hasta</label>
+                <input type="date" name="fecha_hasta" value="{{ fecha_hasta }}" class="form-control">
+            </div>
+            <div class="col-12 d-flex justify-content-end gap-2">
+                <a href="{% url 'productos:movimientos_stock' %}" class="btn btn-outline-secondary fw-semibold">
+                    <i class="fas fa-undo me-1"></i> Limpiar
+                </a>
+                <button type="submit" class="btn btn-primary fw-semibold">
+                    <i class="fas fa-filter me-1"></i> Filtrar
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- TABLA DE MOVIMIENTOS -->
+<div class="card border-0 shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table id="tabla-movimientos" class="table table-hover align-middle mb-0">
+                <thead>
+                    <tr>
+                        <th class="ps-3 py-2">FECHA Y HORA</th>
+                        <th class="py-2">PRODUCTO</th>
+                        <th class="text-center py-2">TIPO</th>
+                        <th class="text-center py-2">CANTIDAD</th>
+                        <th class="py-2">MOTIVO / DETALLE</th>
+                        <th class="py-2 pe-3">RESPONSABLE</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for mov in page_obj %}
+                    <tr>
+                        <td class="ps-3">{{ mov.fecha|date:"d/m/Y H:i" }}</td>
+                        <td class="fw-semibold">{{ mov.producto.nombre }}</td>
+                        <td class="text-center">
+                            {% if mov.tipo == 'INGRESO' %}
+                                <span class="badge bg-success-subtle text-success border border-success-subtle">+ INGRESO</span>
+                            {% elif mov.tipo == 'VENTA' or mov.tipo == 'EGRESO' %}
+                                <span class="badge bg-danger-subtle text-danger border border-danger-subtle">- {{ mov.tipo }}</span>
+                            {% else %}
+                                <span class="badge bg-warning-subtle text-warning border border-warning-subtle">AJUSTE</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-center fw-bold fs-6">
+                            {% if mov.tipo == 'INGRESO' %}+{% else %}-{% endif %}{{ mov.cantidad }}
+                        </td>
+                        <td>{{ mov.motivo|default:"---" }}</td>
+                        <td class="pe-3 text-secondary small"><i class="fas fa-user me-1"></i> {{ mov.usuario.username|default:"Sistema" }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="6" class="text-center text-muted py-4">No se registraron movimientos de stock con los filtros seleccionados.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- PAGINACIÓN -->
+    {% if page_obj.has_other_pages %}
+    <div class="card-footer bg-body py-3 d-flex justify-content-center no-print">
+        <ul class="pagination mb-0">
+            {% if page_obj.has_previous %}
+                <li class="page-item"><a class="page-link" href="?page={{ page_obj.previous_page_number }}&q={{ query }}&tipo={{ tipo_mov }}&fecha_desde={{ fecha_desde }}&fecha_hasta={{ fecha_hasta }}">Anterior</a></li>
+            {% endif %}
+            <li class="page-item active"><span class="page-link">{{ page_obj.number }} de {{ page_obj.paginator.num_pages }}</span></li>
+            {% if page_obj.has_next %}
+                <li class="page-item"><a class="page-link" href="?page={{ page_obj.next_page_number }}&q={{ query }}&tipo={{ tipo_mov }}&fecha_desde={{ fecha_desde }}&fecha_hasta={{ fecha_hasta }}">Siguiente</a></li>
+            {% endif %}
+        </ul>
+    </div>
+    {% endif %}
+</div>
+
+<!-- EXPORTACIÓN EXCEL -->
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const btnExcel = document.getElementById('btn-excel-movs');
+    if (btnExcel) {
+        btnExcel.addEventListener('click', function() {
+            let csvContent = "\uFEFF";
+            const tabla = document.getElementById('tabla-movimientos');
+            const filas = tabla.querySelectorAll('tr');
+
+            filas.forEach(fila => {
+                const celdas = fila.querySelectorAll('th, td');
+                const filaData = [];
+                celdas.forEach(celda => {
+                    let texto = celda.innerText.replace(/(\r\n|\n|\r)/gm, ' ').replace(/"/g, '""').trim();
+                    filaData.push('"' + texto + '"');
+                });
+                if (filaData.length > 0) csvContent += filaData.join(';') + '\r\n';
+            });
+
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.setAttribute('href', url);
+            link.setAttribute('download', 'Movimientos_Stock.csv');
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        });
+    }
+});
+</script>
+{% endblock %}
