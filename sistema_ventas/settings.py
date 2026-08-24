@@ -57,6 +57,7 @@ TEMPLATES = [
                 
                 # 👈 AGREGA ESTA LÍNEA AQUÍ:
                 'apps.configuracion.context_processors.configuracion_global',
+                'apps.core.context_processors.roles_usuario',
             ],
         },
     },

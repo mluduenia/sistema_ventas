@@ -29,10 +29,10 @@ def es_cajero_o_superior(user):
 # --- PRODUCTOS ---
 # ==========================================
 
+# Permite ver la lista a cualquier usuario logueado (Cajero, Admin, Superuser)
 @login_required
-@user_passes_test(es_cajero_o_superior)
 def lista_productos(request):
-    """Listado de productos (Consulta permitida para Cajeros, Admins y Superusuarios)."""
+    """Listado y consulta de productos con filtros."""
     productos = Producto.objects.select_related('categoria', 'proveedor').all().order_by('nombre')
 
     q = request.GET.get('q', '').strip()
@@ -52,11 +52,15 @@ def lista_productos(request):
     categorias = Categoria.objects.all()
     proveedores = Proveedor.objects.all()
 
+    # Bandera para saber si el usuario puede modificar
+    es_admin = request.user.is_superuser or request.user.groups.filter(name='Administrador').exists()
+
     context = {
         'productos': productos,
         'categorias': categorias,
         'proveedores': proveedores,
         'q': q,
+        'es_admin': es_admin,
     }
     return render(request, 'productos/lista_productos.html', context)
 
@@ -242,9 +246,8 @@ def eliminar_proveedor(request, pk):
 # ==========================================
 
 @login_required
-@user_passes_test(es_cajero_o_superior)
 def movimientos_stock_view(request):
-    """Historial y auditoría de entradas y salidas de stock."""
+    """Historial y auditoría de entradas y salidas de stock (Accesible por Cajeros y Administradores)."""
     movimientos = MovimientoStock.objects.all().select_related('producto').order_by('-fecha')
 
     query = request.GET.get('q', '').strip()
@@ -272,11 +275,15 @@ def movimientos_stock_view(request):
     page_number = request.GET.get('page')
     page_obj = paginator.get_page(page_number)
 
+    # Identificar si es Administrador o Superusuario
+    es_admin = request.user.is_superuser or request.user.groups.filter(name='Administrador').exists()
+
     context = {
         'page_obj': page_obj,
         'query': query,
         'tipo_mov': tipo_mov,
         'fecha_desde': fecha_desde,
         'fecha_hasta': fecha_hasta,
+        'es_admin': es_admin,
     }
     return render(request, 'productos/movimientos_stock.html', context)

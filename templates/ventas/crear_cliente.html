@@ -1,0 +1,80 @@
+{% extends 'base.html' %}
+
+{% block title %}Nuevo Cliente | Sistema POS{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3">
+    <div class="row justify-content-center">
+        <div class="col-12 col-md-8 col-lg-6">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-body py-3 border-bottom d-flex align-items-center justify-content-between">
+                    <h5 class="fw-bold mb-0 text-body">
+                        <i class="fas fa-user-plus me-2 text-primary"></i> Registrar Nuevo Cliente
+                    </h5>
+                    <a href="javascript:history.back()" class="btn btn-sm btn-outline-secondary">
+                        <i class="fas fa-arrow-left me-1"></i> Volver
+                    </a>
+                </div>
+                <div class="card-body p-4">
+                    <form method="POST" action="{% url 'ventas:crear_cliente' %}">
+                        {% csrf_token %}
+                        
+                        <!-- Razón Social o Nombre Completo -->
+                        <div class="mb-3">
+                            <label for="nombre" class="form-label fw-bold small">Razón Social / Nombre Completo <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="nombre" name="nombre" placeholder="Ej: Juan Pérez o Empresa S.A." required>
+                        </div>
+
+                        <div class="row g-3 mb-3">
+                            <!-- Tipo de Documento / CUIT / DNI -->
+                            <div class="col-12 col-sm-6">
+                                <label for="cuit_dni" class="form-label fw-bold small">CUIT / DNI <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" id="cuit_dni" name="cuit_dni" placeholder="Sin guiones ni puntos" required>
+                            </div>
+
+                            <!-- Condición de IVA -->
+                            <div class="col-12 col-sm-6">
+                                <label for="condicion_iva" class="form-label fw-bold small">Condición frente al IVA</label>
+                                <select class="form-select" id="condicion_iva" name="condicion_iva">
+                                    <option value="Consumidor Final" selected>Consumidor Final</option>
+                                    <option value="Responsable Inscripto">Responsable Inscripto</option>
+                                    <option value="Monotributo">Monotributo</option>
+                                    <option value="Exento">Exento</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="row g-3 mb-3">
+                            <!-- Teléfono -->
+                            <div class="col-12 col-sm-6">
+                                <label for="telefono" class="form-label fw-bold small">Teléfono</label>
+                                <input type="text" class="form-control" id="telefono" name="telefono" placeholder="Ej: 11 1234 5678">
+                            </div>
+
+                            <!-- Correo Electrónico -->
+                            <div class="col-12 col-sm-6">
+                                <label for="email" class="form-label fw-bold small">Correo Electrónico</label>
+                                <input type="email" class="form-control" id="email" name="email" placeholder="cliente@correo.com">
+                            </div>
+                        </div>
+
+                        <!-- Dirección Comercial / Fiscal -->
+                        <div class="mb-4">
+                            <label for="direccion" class="form-label fw-bold small">Dirección Fiscal / Domicilio</label>
+                            <input type="text" class="form-control" id="direccion" name="direccion" placeholder="Calle, Número, Localidad">
+                        </div>
+
+                        <!-- Botones de Acción -->
+                        <div class="d-flex justify-content-end gap-2 border-top pt-3">
+                            <a href="javascript:history.back()" class="btn btn-secondary">Cancelar</a>
+                            <button type="submit" class="btn btn-primary px-4 fw-bold">
+                                <i class="fas fa-save me-1"></i> Guardar Cliente
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

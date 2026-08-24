@@ -7,12 +7,14 @@
     <h3 class="fw-bold mb-0">
         <i class="fas fa-boxes text-primary me-2"></i> Gestión de Productos
     </h3>
-    <a href="{% url 'productos:crear_producto' %}" class="btn btn-success fw-bold shadow-sm">
-        <i class="fas fa-plus-circle me-1"></i> Nuevo Producto
+    {% if es_admin %}
+    <a href="{% url 'productos:crear_producto' %}" class="btn btn-primary fw-semibold">
+        <i class="fas fa-plus me-1"></i> Nuevo Producto
     </a>
+    {% endif %}
 </div>
 
-<!-- CONTAINER DE FILTROS (ADAPTADO A MODO OSCURO / DÍA SIN BG-WHITE FIJO) -->
+<!-- CONTAINER DE FILTROS -->
 <div class="card border-0 shadow-sm mb-4">
     <div class="card-body p-3">
         <form method="GET" class="row g-2 align-items-end">
@@ -28,11 +30,11 @@
             <!-- Select Rubro / Categoría -->
             <div class="col-12 col-md-3">
                 <label class="form-label small fw-semibold text-secondary mb-1">Rubro / Categoría</label>
-                <select name="rubro" class="form-select">
+                <select name="categoria" class="form-select">
                     <option value="">-- Todos los Rubros --</option>
-                    {% for rubro in rubros %}
-                        <option value="{{ rubro.id }}" {% if request.GET.rubro == rubro.id|stringformat:"i" %}selected{% endif %}>
-                            {{ rubro.nombre }}
+                    {% for cat in categorias %}
+                        <option value="{{ cat.id }}" {% if request.GET.categoria == cat.id|stringformat:"i" %}selected{% endif %}>
+                            {{ cat.nombre }}
                         </option>
                     {% endfor %}
                 </select>
@@ -45,7 +47,7 @@
                     <option value="">-- Todos los Proveedores --</option>
                     {% for prov in proveedores %}
                         <option value="{{ prov.id }}" {% if request.GET.proveedor == prov.id|stringformat:"i" %}selected{% endif %}>
-                            {{ prov.nombre }}
+                            {{ prov.nombre_o_razon_social }}
                         </option>
                     {% endfor %}
                 </select>
@@ -78,7 +80,9 @@
                         <th>Precio Venta</th>
                         <th class="text-center">IVA</th>
                         <th class="text-center">Stock</th>
-                        <th class="text-center pe-3">Acciones</th>
+                        {% if es_admin %}
+                            <th class="text-end pe-3">Acciones</th>
+                        {% endif %}
                     </tr>
                 </thead>
                 <tbody>
@@ -98,7 +102,7 @@
                                     <span class="text-muted small">---</span>
                                 {% endif %}
                             </td>
-                            <td>{{ prod.proveedor.nombre|default:"---" }}</td>
+                            <td>{{ prod.proveedor.nombre_o_razon_social|default:"---" }}</td>
                             <td class="fw-bold text-success">${{ prod.precio_venta|floatformat:2 }}</td>
                             <td class="text-center">
                                 <span class="badge bg-body-tertiary text-body border">{{ prod.iva|default:"21.00" }}%</span>
@@ -110,7 +114,8 @@
                                     <span class="badge bg-success">{{ prod.stock_actual }}</span>
                                 {% endif %}
                             </td>
-                            <td class="text-center pe-3">
+                            {% if es_admin %}
+                            <td class="text-end pe-3">
                                 <a href="{% url 'productos:editar_producto' prod.id %}" class="btn btn-sm btn-outline-primary me-1" title="Editar">
                                     <i class="fas fa-edit"></i>
                                 </a>
@@ -118,10 +123,11 @@
                                     <i class="fas fa-trash"></i>
                                 </a>
                             </td>
+                            {% endif %}
                         </tr>
                     {% empty %}
                         <tr>
-                            <td colspan="8" class="text-center text-muted py-5">
+                            <td colspan="{% if es_admin %}8{% else %}7{% endif %}" class="text-center text-muted py-5">
                                 <i class="fas fa-box-open fa-2x mb-2 opacity-25 d-block"></i>
                                 No se encontraron productos.
                             </td>

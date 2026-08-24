@@ -16,17 +16,27 @@
     <!-- Custom Theme -->
     <link rel="stylesheet" href="/static/css/custom.css">
 
+    <style>
+        /* Ajuste de maquetación para Sidebar Fijo en Escritorio */
+        @media (min-width: 768px) {
+            .main-wrapper {
+                margin-left: 240px !important;
+                width: calc(100% - 240px) !important;
+            }
+        }
+    </style>
+
     {% block extra_css %}{% endblock %}
     {% block extra_head %}{% endblock %}
 </head>
 <body>
 
 <div class="d-flex min-vh-100">
-    <!-- SIDEBAR / MENÚ LATERAL (ESCRITORIO / PC) -->
-    <aside class="bg-dark text-white p-3 d-none d-md-flex flex-column justify-content-between" style="width: 240px; flex-shrink: 0;">
-        <div>
+    <!-- SIDEBAR / MENÚ LATERAL FIJO (ESCRITORIO - PC) -->
+    <aside class="bg-dark text-white p-3 d-none d-md-flex flex-column justify-content-between position-fixed top-0 bottom-0 start-0" style="width: 240px; z-index: 1050;">
+        <div class="d-flex flex-column overflow-hidden h-100">
             <!-- MARCA / LOGO DEL COMERCIO -->
-            <div class="d-flex align-items-center mb-4 px-2">
+            <div class="d-flex align-items-center mb-4 px-2 flex-shrink-0">
                 {% if configuracion and configuracion.logo %}
                     <img src="{{ configuracion.logo.url }}" alt="Logo" class="me-2 rounded bg-white p-1" style="max-height: 38px; max-width: 45px; object-fit: contain;">
                 {% else %}
@@ -41,15 +51,18 @@
                 </span>
             </div>
 
-            <nav class="nav nav-pills flex-column gap-1">
-                <!-- Dashboard (Visible para Administradores y Superusuarios) -->
-                {% if request.user.is_superuser or 'Administrador' in request.user.groups.all|join:',' %}
+            <!-- NAVEGACIÓN ESCRITORIO -->
+            <nav class="nav nav-pills flex-column gap-1 overflow-y-auto pe-1 flex-grow-1">
+
+                <!-- 1. DASHBOARD (PUBLICO PARA TODOS LOS USUARIOS AUTENTICADOS) -->
+                {% if request.user.is_authenticated %}
                 <a href="{% url 'core:dashboard' %}" class="nav-link text-white-50 d-flex align-items-center gap-2 py-2 px-3 rounded {% if request.resolver_match.url_name == 'dashboard' %}active text-white{% endif %}">
                     <i class="fas fa-chart-line w-20"></i> Dashboard
                 </a>
                 {% endif %}
 
-                <!-- Submenú Ventas (Todos los niveles) -->
+                <!-- 2. SUBMENÚ VENTAS (Cajero, Supervisor, Gerente, Admin - EXCLUYE Almacenista) -->
+                {% if not 'Almacenista' in request.user.groups.all|join:',' %}
                 <div class="nav-item">
                     <a class="nav-link text-white-50 d-flex align-items-center justify-content-between py-2 px-3 rounded" data-bs-toggle="collapse" href="#submenuVentas" role="button" aria-expanded="false">
                         <span class="d-flex align-items-center gap-2"><i class="fas fa-shopping-cart w-20"></i> Ventas</span>
@@ -66,8 +79,9 @@
                         </nav>
                     </div>
                 </div>
+                {% endif %}
 
-                <!-- Submenú Stock / Catálogos (Todos leen, solo Admins/Super ven links avanzados si aplica) -->
+                <!-- 3. SUBMENÚ STOCK / PRODUCTOS -->
                 <div class="nav-item">
                     <a class="nav-link text-white-50 d-flex align-items-center justify-content-between py-2 px-3 rounded" data-bs-toggle="collapse" href="#submenuStock" role="button" aria-expanded="false">
                         <span class="d-flex align-items-center gap-2"><i class="fas fa-boxes w-20"></i> Stock / Productos</span>
@@ -75,46 +89,56 @@
                     </a>
                     <div class="collapse {% if 'productos' in request.path or 'stock' in request.path %}show{% endif %}" id="submenuStock">
                         <nav class="nav nav-pills flex-column ps-3 gap-1 mt-1">
+                            <!-- Productos y Movimientos (Visibles para Todos) -->
                             <a href="{% url 'productos:lista_productos' %}" class="nav-link text-white-50 py-1 px-3 rounded small {% if request.resolver_match.url_name == 'lista_productos' %}active text-white{% endif %}">
                                 <i class="fas fa-box me-2"></i> Productos / Existencias
                             </a>
                             <a href="{% url 'productos:movimientos_stock' %}" class="nav-link text-white-50 py-1 px-3 rounded small {% if request.resolver_match.url_name == 'movimientos_stock' %}active text-white{% endif %}">
                                 <i class="fas fa-exchange-alt me-2"></i> Movimientos de Stock
                             </a>
+
+                            <!-- Rubros y Proveedores (Solo para Supervisor, Gerente, Admin) -->
+                            {% if request.user.is_superuser or 'Administrador' in request.user.groups.all|join:',' or 'Gerente' in request.user.groups.all|join:',' or 'Supervisor' in request.user.groups.all|join:',' %}
                             <a href="{% url 'productos:lista_categorias' %}" class="nav-link text-white-50 py-1 px-3 rounded small {% if 'categorias' in request.path %}active text-white{% endif %}">
                                 <i class="fas fa-tags me-2"></i> Rubros / Categorías
                             </a>
                             <a href="{% url 'productos:lista_proveedores' %}" class="nav-link text-white-50 py-1 px-3 rounded small {% if 'proveedores' in request.path %}active text-white{% endif %}">
                                 <i class="fas fa-truck me-2"></i> Proveedores
                             </a>
+                            {% endif %}
                         </nav>
                     </div>
                 </div>
 
-                <!-- Reportes y Estadísticas (Todos los niveles) -->
+                <!-- 4. REPORTES Y ESTADÍSTICAS (Cajero, Supervisor, Gerente, Admin) -->
+                {% if not 'Almacenista' in request.user.groups.all|join:',' %}
                 <a href="{% url 'ventas:reportes' %}" class="nav-link text-white-50 d-flex align-items-center gap-2 py-2 px-3 rounded {% if request.resolver_match.url_name == 'reportes' %}active text-white{% endif %}">
                     <i class="fas fa-chart-bar w-20"></i> Reportes / Stats
                 </a>
+                {% endif %}
 
-                <!-- Configuración (Solo Admins y Superusuarios) -->
+                <!-- 5. CONFIGURACIÓN (EXCLUSIVO Administrador) -->
                 {% if request.user.is_superuser or 'Administrador' in request.user.groups.all|join:',' %}
                 <a href="{% url 'configuracion:configuracion_general' %}" class="nav-link text-white-50 d-flex align-items-center gap-2 py-2 px-3 rounded {% if 'configuracion' in request.path %}active text-white{% endif %}">
                     <i class="fas fa-cog w-20"></i> Configuración
                 </a>
                 {% endif %}
 
-                <!-- Abrir / Cerrar Caja (Todos los cajeros/admins) -->
+                <!-- 6. ARQUEO DE CAJA (Cajero, Supervisor, Gerente, Admin) -->
+                {% if not 'Almacenista' in request.user.groups.all|join:',' %}
                 <a href="{% url 'ventas:cerrar_caja' %}" class="nav-link text-warning d-flex align-items-center gap-2 py-2 px-3 rounded mt-2">
                     <i class="fas fa-calculator w-20"></i> Arqueo / Turno
                 </a>
+                {% endif %}
+
             </nav>
         </div>
 
-        <!-- Usuario & Logout en Escritorio -->
-        <div class="border-top border-secondary pt-3">
+        <!-- USUARIO & LOGOUT -->
+        <div class="border-top border-secondary pt-3 flex-shrink-0 mt-auto">
             <div class="d-flex align-items-center justify-content-between px-2">
-                <span class="small text-white-50"><i class="fas fa-user me-1"></i> {{ request.user.username }}</span>
-                <a href="{% url 'usuarios:logout' %}" class="text-danger small" title="Cerrar Sesión">
+                <span class="small text-white-50 text-truncate me-2"><i class="fas fa-user me-1"></i> {{ request.user.username }}</span>
+                <a href="{% url 'usuarios:logout' %}" class="text-danger small fw-semibold text-decoration-none" title="Cerrar Sesión">
                     <i class="fas fa-sign-out-alt"></i> Salir
                 </a>
             </div>
@@ -122,7 +146,7 @@
     </aside>
 
     <!-- CONTENIDO PRINCIPAL -->
-    <div class="flex-grow-1 d-flex flex-column w-100 overflow-hidden">
+    <div class="main-wrapper flex-grow-1 d-flex flex-column w-100 overflow-hidden" style="min-height: 100vh;">
         <!-- NAVBAR SUPERIOR -->
         <header class="navbar navbar-expand border-bottom px-3 py-2 bg-body">
             <div class="container-fluid p-0 d-flex justify-content-between align-items-center">
@@ -190,28 +214,35 @@
         </div>
         <div class="offcanvas-body p-3">
             <nav class="nav nav-pills flex-column gap-2">
-                {% if request.user.is_superuser or 'Administrador' in request.user.groups.all|join:',' %}
+                {% if request.user.is_authenticated %}
                 <a href="{% url 'core:dashboard' %}" class="nav-link text-body py-2"><i class="fas fa-chart-line me-2 text-primary"></i> Dashboard</a>
                 {% endif %}
                 
-                <!-- Ventas Móvil -->
+                {% if not 'Almacenista' in request.user.groups.all|join:',' %}
                 <a href="{% url 'ventas:pos' %}" class="nav-link text-body py-2"><i class="fas fa-cash-register me-2 text-primary"></i> Punto de Venta</a>
                 <a href="{% url 'ventas:lista_ventas' %}" class="nav-link text-body py-2"><i class="fas fa-list-alt me-2 text-primary"></i> Historial de Ventas</a>
+                {% endif %}
                 
                 <!-- Stock Móvil -->
                 <a href="{% url 'productos:lista_productos' %}" class="nav-link text-body py-2"><i class="fas fa-boxes me-2 text-primary"></i> Productos / Stock</a>
                 <a href="{% url 'productos:movimientos_stock' %}" class="nav-link text-body py-2"><i class="fas fa-exchange-alt me-2 text-primary"></i> Movimientos de Stock</a>
+                
+                {% if request.user.is_superuser or 'Administrador' in request.user.groups.all|join:',' or 'Gerente' in request.user.groups.all|join:',' or 'Supervisor' in request.user.groups.all|join:',' %}
                 <a href="{% url 'productos:lista_categorias' %}" class="nav-link text-body py-2"><i class="fas fa-tags me-2 text-primary"></i> Rubros</a>
                 <a href="{% url 'productos:lista_proveedores' %}" class="nav-link text-body py-2"><i class="fas fa-truck me-2 text-primary"></i> Proveedores</a>
+                {% endif %}
                 
-                <!-- Extras Móvil -->
+                {% if not 'Almacenista' in request.user.groups.all|join:',' %}
                 <a href="{% url 'ventas:reportes' %}" class="nav-link text-body py-2"><i class="fas fa-chart-bar me-2 text-primary"></i> Reportes y Estadísticas</a>
+                {% endif %}
                 
                 {% if request.user.is_superuser or 'Administrador' in request.user.groups.all|join:',' %}
                 <a href="{% url 'configuracion:configuracion_general' %}" class="nav-link text-body py-2"><i class="fas fa-cog me-2 text-primary"></i> Configuración</a>
                 {% endif %}
                 
+                {% if not 'Almacenista' in request.user.groups.all|join:',' %}
                 <a href="{% url 'ventas:cerrar_caja' %}" class="nav-link text-warning py-2"><i class="fas fa-calculator me-2"></i> Arqueo / Cerrar Turno</a>
+                {% endif %}
             </nav>
         </div>
     </div>
@@ -261,7 +292,6 @@
         }
     });
 
-    // Soporte táctil móvil
     document.addEventListener('mouseup', function (e) {
         if (e.target && (e.target.type === 'number' || e.target.classList.contains('input-cant') || e.target.classList.contains('input-num'))) {
             e.preventDefault();

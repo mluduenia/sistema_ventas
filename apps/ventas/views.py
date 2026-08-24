@@ -10,6 +10,9 @@ from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
+from django.shortcuts import render, redirect
+from django.contrib import messages
+from .models import Cliente  # Ajusta según el modelo de cliente de tu proyecto
 
 from apps.configuracion.models import EmpresaConfig
 from apps.productos.models import MovimientoStock, Producto
@@ -475,3 +478,23 @@ def reportes_view(request):
         'proveedores_top': proveedores_top,
     }
     return render(request, 'ventas/reportes.html', context)
+
+def crear_cliente(request):
+    if request.method == 'POST':
+        nombre = request.POST.get('nombre')
+        cuit_dni = request.POST.get('cuit_dni')
+        telefono = request.POST.get('telefono')
+        email = request.POST.get('email')
+        direccion = request.POST.get('direccion')
+
+        Cliente.objects.create(
+            nombre=nombre,
+            numero_documento=cuit_dni,  # <--- Se usa el nombre de campo real
+            telefono=telefono,
+            email=email,
+            direccion=direccion
+        )
+        messages.success(request, 'Cliente registrado correctamente.')
+        return redirect('ventas:pos')
+
+    return render(request, 'ventas/crear_cliente.html')
