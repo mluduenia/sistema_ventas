@@ -306,26 +306,34 @@ def procesar_venta_ajax(request):
                 key_path = config.clave_privada_key.path
                 cuit = config.cuit.replace("-", "").strip()
 
+                # Selección de ambiente según configuración (Homologación vs Producción)
+                if config.ambiente_arca == 'PROD':
+                    wsdl_wsaa = "https://wsaa.afip.gov.ar/ws/services/LoginCms"
+                    wsdl_wsfe = "https://servicios1.afip.gov.ar/wsfev1/service.asmx?WSDL"
+                else:
+                    wsdl_wsaa = "https://wsaahomo.afip.gov.ar/ws/services/LoginCms"
+                    wsdl_wsfe = "https://wswhomo.afip.gov.ar/wsfev1/service.asmx?WSDL"
+
                 # A. Autenticación con WSAA
                 wsaa = WSAA()
                 ta = wsaa.Autenticar(
                     "wsfe",
                     cert_path,
                     key_path,
-                    wsdl="https://wsaahomo.afip.gov.ar/ws/services/LoginCms",
+                    wsdl=wsdl_wsaa,
                 )
 
                 # B. Inicializar WSFEv1
                 wsfev1 = WSFEv1()
                 wsfev1.Cuit = cuit
                 wsfev1.SetTicketAcceso(ta)
-                
+
                 # C. Conectar
                 CACHE_DIR = os.path.join(settings.BASE_DIR, 'afip_cache')
                 os.makedirs(CACHE_DIR, exist_ok=True)
 
                 wsfev1.Conectar(
-                    wsdl="https://wswhomo.afip.gov.ar/wsfev1/service.asmx?WSDL",
+                    wsdl=wsdl_wsfe,
                     cache=CACHE_DIR,
                 )
 
@@ -362,7 +370,7 @@ def procesar_venta_ajax(request):
                 )
                 imp_iva = (total_venta - imp_neto).quantize(
                     Decimal("0.01"), rounding=ROUND_HALF_UP
-                )               
+                )
 
                 # H. Crear Factura en AFIP
                 wsfev1.CrearFactura(
