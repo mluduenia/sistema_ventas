@@ -1,5 +1,8 @@
 import json
+import logging
 from datetime import datetime
+from decimal import Decimal, ROUND_HALF_UP
+
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
@@ -10,14 +13,15 @@ from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
-from django.shortcuts import render, redirect
-from django.contrib import messages
-from .models import Cliente  # Ajusta según el modelo de cliente de tu proyecto
+from django.conf import settings
+import os
+
 
 from apps.configuracion.models import EmpresaConfig
 from apps.productos.models import MovimientoStock, Producto
-
 from .models import CajaTurno, Cliente, DetalleVenta, Venta
+
+logger = logging.getLogger(__name__)
 
 
 @login_required
@@ -176,91 +180,48 @@ def cerrar_caja(request):
     }
     return render(request, 'ventas/cerrar_caja.html', context)
 
-import json
-import logging
-from decimal import Decimal
-
-from django.contrib.auth.decorators import login_required
-from django.db import transaction
-from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_exempt
-from django.utils import timezone
-
-from apps.productos.models import MovimientoStock, Producto
-from .models import CajaTurno, Cliente, DetalleVenta, Venta
-
-import json
-import logging
-from decimal import Decimal
-
-from django.contrib.auth.decorators import login_required
-from django.db import transaction
-from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_exempt
-
-from apps.productos.models import MovimientoStock, Producto
-from .models import CajaTurno, DetalleVenta, Venta
-
-logger = logging.getLogger(__name__)
 
 @login_required
 @csrf_exempt
 @transaction.atomic
 def procesar_venta_ajax(request):
     """
-    Procesa una venta desde el POS.
-    Espera una petición POST con datos en JSON o form-data.
+    Procesa una venta desde el POS e integra facturación electrónica con ARCA / AFIP.
     """
     if request.method != 'POST':
-        return JsonResponse(
-            {'status': 'error', 'message': 'Método no permitido.'},
-            status=405
-        )
+        return JsonResponse({'status': 'error', 'message': 'Método no permitido.'}, status=405)
 
     try:
-        # 1. Parsear datos según Content-Type
+        # 1. Parsear datos de la petición
         if request.content_type == 'application/json':
             data = json.loads(request.body)
             items = data.get('items', [])
             metodo_pago = data.get('metodo_pago', 'EFECTIVO')
             cliente_id = data.get('cliente_id')
             monto_recibido = float(data.get('monto_recibido', 0))
+            tipo_comprobante = int(data.get('tipo_comprobante', 6))
         else:
             items_str = request.POST.get('items')
             if not items_str:
-                return JsonResponse(
-                    {'status': 'error', 'message': 'No se envió el carrito.'},
-                    status=400
-                )
+                return JsonResponse({'status': 'error', 'message': 'No se envió el carrito.'}, status=400)
             try:
                 items = json.loads(items_str)
             except json.JSONDecodeError:
-                return JsonResponse(
-                    {'status': 'error', 'message': 'Carrito inválido.'},
-                    status=400
-                )
+                return JsonResponse({'status': 'error', 'message': 'Carrito inválido.'}, status=400)
             metodo_pago = request.POST.get('metodo_pago', 'EFECTIVO')
             cliente_id = request.POST.get('cliente_id')
             monto_recibido = float(request.POST.get('monto_recibido', 0))
+            tipo_comprobante = int(request.POST.get('tipo_comprobante', 6))
 
         if not items:
-            return JsonResponse(
-                {'status': 'error', 'message': 'El carrito está vacío.'},
-                status=400
-            )
+            return JsonResponse({'status': 'error', 'message': 'El carrito está vacío.'}, status=400)
 
-        # 2. Validar turno activo
-        turno_activo = CajaTurno.objects.filter(
-            vendedor=request.user,
-            estado='ABIERTA'
-        ).first()
+        # 2. Validar Turno de Caja Activo
+        turno_activo = CajaTurno.objects.filter(vendedor=request.user, estado='ABIERTA').first()
         if not turno_activo:
-            return JsonResponse(
-                {'status': 'error', 'message': 'No hay turno de caja abierto.'},
-                status=400
-            )
+            return JsonResponse({'status': 'error', 'message': 'No tienes una caja/turno abierto para vender.'}, status=400)
 
-        # 3. Procesar ítems y calcular total
+        # 3. Procesar Ítems y Calcular Totales
         total_venta = Decimal('0.00')
         detalles_a_crear = []
 
@@ -268,10 +229,7 @@ def procesar_venta_ajax(request):
             prod_id = item.get('id')
             cantidad = int(item.get('cantidad', 1))
             if not prod_id:
-                return JsonResponse(
-                    {'status': 'error', 'message': 'Ítem sin ID de producto.'},
-                    status=400
-                )
+                return JsonResponse({'status': 'error', 'message': 'Ítem sin ID de producto.'}, status=400)
 
             producto = Producto.objects.select_for_update().get(pk=prod_id)
 
@@ -289,25 +247,31 @@ def procesar_venta_ajax(request):
                 'producto': producto,
                 'cantidad': cantidad,
                 'precio': precio,
-                'subtotal': subtotal,  # <-- guardamos el subtotal
+                'subtotal': subtotal,
             })
 
-        # 4. Calcular vuelto
+        # 4. Calcular Vuelto
         monto_recibido = Decimal(str(monto_recibido))
         vuelto = max(Decimal('0.00'), monto_recibido - total_venta)
 
-        # 5. Crear la venta (incluyendo monto_recibido y vuelto)
+        # 5. Obtener datos del Cliente
+        cliente_obj = None
+        if cliente_id:
+            cliente_obj = Cliente.objects.filter(id=cliente_id).first()
+
+        # 6. Crear Registro de Venta Local
         venta = Venta.objects.create(
-            vendedor=request.user,
             turno=turno_activo,
-            cliente_id=cliente_id if cliente_id else None,
-            total=total_venta,
+            vendedor=request.user,
+            cliente=cliente_obj,
             metodo_pago=metodo_pago,
+            total=total_venta,
             monto_recibido=monto_recibido,
             vuelto=vuelto,
+            tipo_comprobante=tipo_comprobante,
         )
 
-        # 6. Crear detalles, descontar stock y registrar movimientos
+        # 7. Crear Detalles de Venta y Descontar Stock
         for det in detalles_a_crear:
             prod = det['producto']
             cant = det['cantidad']
@@ -317,7 +281,7 @@ def procesar_venta_ajax(request):
                 producto=prod,
                 cantidad=cant,
                 precio_unitario=det['precio'],
-                subtotal=det['subtotal'],  # <-- ¡Esta línea es la clave!
+                subtotal=det['subtotal'],
             )
 
             prod.stock_actual -= cant
@@ -330,51 +294,169 @@ def procesar_venta_ajax(request):
                 motivo=f'Venta POS Ticket #{venta.id}'
             )
 
-        # 7. Respuesta exitosa
+        # 8. CONEXIÓN Y SOLICITUD DE CAE A ARCA / AFIP (pyafipws)
+        config = EmpresaConfig.objects.first()
+
+        if config and config.certificado_crt and config.clave_privada_key and config.cuit and tipo_comprobante != 0:
+            try:
+                from pyafipws.wsaa import WSAA
+                from pyafipws.wsfev1 import WSFEv1
+
+                cert_path = config.certificado_crt.path
+                key_path = config.clave_privada_key.path
+                cuit = config.cuit.replace("-", "").strip()
+
+                # A. Autenticación con WSAA
+                wsaa = WSAA()
+                ta = wsaa.Autenticar(
+                    "wsfe",
+                    cert_path,
+                    key_path,
+                    wsdl="https://wsaahomo.afip.gov.ar/ws/services/LoginCms",
+                )
+
+                # B. Inicializar WSFEv1
+                wsfev1 = WSFEv1()
+                wsfev1.Cuit = cuit
+                wsfev1.SetTicketAcceso(ta)
+                
+                # C. Conectar
+                CACHE_DIR = os.path.join(settings.BASE_DIR, 'afip_cache')
+                os.makedirs(CACHE_DIR, exist_ok=True)
+
+                wsfev1.Conectar(
+                    wsdl="https://wswhomo.afip.gov.ar/wsfev1/service.asmx?WSDL",
+                    cache=CACHE_DIR,
+                )
+
+                # D. Obtener Último Comprobante e Incrementar
+                pto_vta = int(config.punto_de_venta or 1)
+                cbte_nro = int(wsfev1.CompUltimoAutorizado(tipo_comprobante, pto_vta) or 0) + 1
+
+                # E. Datos del Cliente / Comprobante
+                doc_tipo = 99  # Consumidor Final
+                doc_nro = 0
+
+                if cliente_obj and cliente_obj.numero_documento:
+                    doc_nro = cliente_obj.numero_documento.replace("-", "").strip()
+                    if len(doc_nro) == 11:
+                        doc_tipo = 80  # CUIT
+                    elif len(doc_nro) == 8:
+                        doc_tipo = 96  # DNI
+                    else:
+                        doc_tipo = 99  # Consumidor Final
+
+                fecha_cbte = timezone.now().strftime("%Y%m%d")
+
+                # F. Mapeo de condición IVA del receptor (RG 5616)
+                cond_iva_receptor = 5  # 5 = Consumidor Final
+                if cliente_obj and hasattr(cliente_obj, 'condicion_iva') and cliente_obj.condicion_iva:
+                    try:
+                        cond_iva_receptor = int(cliente_obj.condicion_iva)
+                    except (ValueError, TypeError):
+                        cond_iva_receptor = 5
+
+                # G. Calcular Neto e IVA redondeados a 2 decimales
+                imp_neto = (total_venta / Decimal("1.21")).quantize(
+                    Decimal("0.01"), rounding=ROUND_HALF_UP
+                )
+                imp_iva = (total_venta - imp_neto).quantize(
+                    Decimal("0.01"), rounding=ROUND_HALF_UP
+                )               
+
+                # H. Crear Factura en AFIP
+                wsfev1.CrearFactura(
+                    concepto=1,
+                    tipo_doc=doc_tipo,
+                    nro_doc=doc_nro,
+                    tipo_cbte=tipo_comprobante,
+                    punto_vta=pto_vta,
+                    cbt_desde=cbte_nro,
+                    cbt_hasta=cbte_nro,
+                    imp_total=float(total_venta),
+                    imp_tot_conc=0.0,
+                    imp_neto=float(imp_neto),
+                    imp_iva=float(imp_iva),
+                    imp_trib=0.0,
+                    imp_op_ex=0.0,
+                    fecha_cbte=fecha_cbte,
+                )
+
+                # I. RG 5616: setear campo condicion_iva_receptor_id
+                try:
+                    wsfev1.EstablecerCampoFactura("condicion_iva_receptor_id", str(cond_iva_receptor))
+                    wsfev1.EstablecerCampoFactura("cancela_misma_moneda_ext", "N")
+                except Exception as e:
+                    logger.warning(f"No se pudo establecer condicion_iva_receptor_id: {e}")
+
+                # J. Agregar Alicuota de IVA 21%
+                wsfev1.AgregarIva(
+                    5,
+                    float(imp_neto),
+                    float(imp_iva)
+                )
+
+                # K. Solicitar CAE
+                wsfev1.CAESolicitar()
+
+                # L. Procesar respuesta
+                cae_obtenido = getattr(wsfev1, "CAE", None)
+                vencimiento_obtenido = getattr(wsfev1, "Vencimiento", None)
+
+                if cae_obtenido:
+                    venta.cae = str(cae_obtenido)
+                    if vencimiento_obtenido:
+                        try:
+                            venta.vencimiento_cae = datetime.strptime(str(vencimiento_obtenido), "%Y%m%d").date()
+                        except ValueError:
+                            logger.warning(f"No se pudo parsear la fecha de vencimiento: {vencimiento_obtenido}")
+                    venta.numero_comprobante = cbte_nro
+                    venta.tipo_comprobante = tipo_comprobante
+                    venta.save()
+                    logger.info(f"CAE Autorizado para Venta #{venta.id}: {cae_obtenido}")
+                else:
+                    resultado = getattr(wsfev1, "Resultado", "Desconocido")
+                    obs = getattr(wsfev1, "Obs", "Sin observaciones")
+                    logger.error(f"Respuesta ARCA sin CAE. Resultado: {resultado}, Obs: {obs}")
+
+            except Exception as afip_err:
+                logger.exception(f"Excepción al conectar con ARCA/AFIP: {afip_err}")
+
+        # 9. Respuesta exitosa para el POS
         return JsonResponse({
             'status': 'success',
             'message': 'Venta realizada correctamente.',
             'venta_id': venta.id,
             'total': float(total_venta),
             'vuelto': float(vuelto),
+            'cae': venta.cae if venta.cae else None
         })
 
-    except Producto.DoesNotExist as e:
-        logger.warning(f"Producto no encontrado: {e}")
-        return JsonResponse(
-            {'status': 'error', 'message': f'Producto no encontrado: {str(e)}'},
-            status=400
-        )
-    except json.JSONDecodeError as e:
-        logger.warning(f"Error JSON: {e}")
-        return JsonResponse(
-            {'status': 'error', 'message': f'Error en el formato de los datos: {str(e)}'},
-            status=400
-        )
-    except ValueError as e:
-        logger.warning(f"Error de conversión: {e}")
-        return JsonResponse(
-            {'status': 'error', 'message': f'Error en el formato de los números: {str(e)}'},
-            status=400
-        )
     except Exception as e:
         logger.exception("Error inesperado en procesar_venta_ajax")
-        return JsonResponse(
-            {'status': 'error', 'message': f'Error interno: {str(e)}'},
-            status=500
-        )
+        return JsonResponse({'status': 'error', 'message': f'Error interno: {str(e)}'}, status=500)
 
 
 @login_required
 def crear_cliente(request):
-    """Vista rápida para crear cliente desde el POS."""
+    """Vista para crear un nuevo cliente."""
     if request.method == 'POST':
         nombre = request.POST.get('nombre')
-        doc = request.POST.get('numero_documento')
+        cuit_dni = request.POST.get('cuit_dni')
+        telefono = request.POST.get('telefono')
         email = request.POST.get('email')
-        if nombre:
-            Cliente.objects.create(nombre=nombre, numero_documento=doc, email=email)
+        direccion = request.POST.get('direccion')
+
+        Cliente.objects.create(
+            nombre=nombre,
+            numero_documento=cuit_dni,
+            telefono=telefono,
+            email=email,
+            direccion=direccion
+        )
+        messages.success(request, 'Cliente registrado correctamente.')
         return redirect('ventas:pos')
+
     return render(request, 'ventas/crear_cliente.html')
 
 
@@ -478,23 +560,3 @@ def reportes_view(request):
         'proveedores_top': proveedores_top,
     }
     return render(request, 'ventas/reportes.html', context)
-
-def crear_cliente(request):
-    if request.method == 'POST':
-        nombre = request.POST.get('nombre')
-        cuit_dni = request.POST.get('cuit_dni')
-        telefono = request.POST.get('telefono')
-        email = request.POST.get('email')
-        direccion = request.POST.get('direccion')
-
-        Cliente.objects.create(
-            nombre=nombre,
-            numero_documento=cuit_dni,  # <--- Se usa el nombre de campo real
-            telefono=telefono,
-            email=email,
-            direccion=direccion
-        )
-        messages.success(request, 'Cliente registrado correctamente.')
-        return redirect('ventas:pos')
-
-    return render(request, 'ventas/crear_cliente.html')
