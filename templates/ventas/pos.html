@@ -3,7 +3,6 @@
 {% block title %}Punto de Venta | POS{% endblock %}
 
 {% block extra_css %}
-<!-- Librería para lectura de códigos de barras con la cámara -->
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 {% endblock %}
 
@@ -11,11 +10,9 @@
 <div class="row g-3">
     <!-- Columna Izquierda: Búsqueda y Carrito -->
     <div class="col-lg-7">
-        <!-- Búsqueda de Productos -->
         <div class="card mb-3">
             <div class="card-header d-flex justify-content-between align-items-center">
                 <span class="fw-semibold text-secondary"><i class="fas fa-search me-2"></i> Búsqueda de Producto</span>
-                <!-- BOTÓN CÁMARA: SOLO VISIBLE EN MÓVILES -->
                 <button type="button" class="btn btn-sm btn-outline-primary fw-bold d-block d-md-none" id="btn_abrir_escaner">
                     <i class="fas fa-camera me-1"></i> Cámara
                 </button>
@@ -27,18 +24,15 @@
                         <button class="btn btn-primary px-4" type="button" id="btn_buscar">
                             <i class="fas fa-search me-1"></i> Buscar
                         </button>
-                        <!-- BOTÓN CÁMARA JUNTO AL INPUT: SOLO EN MÓVILES -->
                         <button class="btn btn-outline-secondary d-block d-md-none" type="button" id="btn_camara_input" title="Escanear cámara">
                             <i class="fas fa-camera"></i>
                         </button>
                     </div>
-                    <!-- Lista flotante de resultados -->
                     <div id="resultados_busqueda" class="list-group position-absolute w-100 shadow mt-1" style="z-index: 1050; display: none; max-height: 250px; overflow-y: auto;"></div>
                 </div>
             </div>
         </div>
 
-        <!-- Tabla del Carrito -->
         <div class="card">
             <div class="card-header d-flex justify-content-between align-items-center">
                 <span class="fw-semibold text-secondary"><i class="fas fa-shopping-cart me-2"></i> Detalle de la Venta</span>
@@ -72,14 +66,30 @@
         </div>
     </div>
 
-    <!-- Columna Derecha: Cliente, Método de Pago y Total -->
+    <!-- Columna Derecha -->
     <div class="col-lg-5">
         <div class="card mb-3">
             <div class="card-body">
+
+                <!-- VENDEDOR -->
+                <div class="mb-3">
+                    <label class="form-label small fw-semibold text-secondary mb-1">
+                        <i class="fas fa-user-tie text-primary me-1"></i> Vendedor que registra la venta
+                    </label>
+                    <select id="vendedor_id" class="form-select">
+                        {% for v in vendedores %}
+                            <option value="{{ v.id }}" {% if v.id == request.user.id %}selected{% endif %}>
+                                {{ v.get_full_name|default:v.username }}{% if v.rol %} — {{ v.get_rol_display }}{% endif %}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <!-- CLIENTE -->
                 <div class="mb-3">
                     <div class="d-flex justify-content-between align-items-center mb-1">
                         <label class="form-label small fw-semibold text-secondary mb-0">Cliente</label>
-                        <a href="{% url 'ventas:crear_cliente' %}?next={% url 'ventas:pos' %}" class="small text-decoration-none">
+                        <a href="#" id="btn_nuevo_cliente" class="small text-decoration-none">
                             <i class="fas fa-plus-circle me-1"></i> Nuevo
                         </a>
                     </div>
@@ -91,30 +101,112 @@
                     </select>
                 </div>
 
+                <!-- 🔽 TIPO DE ENTREGA (toggle) -->
                 <div class="mb-3">
-                    <label class="form-label small fw-semibold text-secondary">Método de Pago</label>
-                    <select id="metodo_pago" class="form-select">
-                        <option value="EFECTIVO">Efectivo</option>
-                        <option value="TARJETA_DEBITO">Tarjeta de Débito</option>
-                        <option value="TARJETA_CREDITO">Tarjeta de Crédito</option>
-                        <option value="TRANSFERENCIA">Mercado Pago / Transferencia</option>
-                    </select>
+                    <label class="form-label small fw-semibold text-secondary mb-1">
+                        <i class="fas fa-truck text-warning me-1"></i> ¿Cómo se entrega?
+                    </label>
+                    <div class="btn-group w-100" role="group">
+                        <input type="radio" class="btn-check" name="tipo_entrega" id="tipo_local" value="LOCAL" checked>
+                        <label class="btn btn-outline-primary" for="tipo_local">
+                            <i class="fas fa-store me-1"></i> Venta en Local
+                        </label>
+
+                        <input type="radio" class="btn-check" name="tipo_entrega" id="tipo_envio" value="ENVIO">
+                        <label class="btn btn-outline-warning" for="tipo_envio">
+                            <i class="fas fa-truck me-1"></i> Envío a Domicilio
+                        </label>
+                    </div>
                 </div>
 
+                <!-- 🔽 BLOQUE DE ENVÍO (oculto por defecto) -->
+                <div id="bloque_envio" style="display: none;">
+                    <div class="mb-2">
+                        <label class="form-label small fw-semibold text-secondary mb-1">
+                            <i class="fas fa-motorcycle text-warning me-1"></i> Asignar Repartidor <span class="text-danger">*</span>
+                        </label>
+                        <select id="repartidor_id" class="form-select">
+                            <option value="">-- Seleccionar repartidor --</option>
+                            {% for rep in repartidores %}
+                                <option value="{{ rep.user.id }}">
+                                    {{ rep.user.get_full_name|default:rep.user.username }}
+                                    {% if rep.vehiculo %} — {{ rep.vehiculo }}{% endif %}
+                                    {% if rep.zona %} ({{ rep.zona }}){% endif %}
+                                </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="direccion_entrega" class="form-label small fw-semibold text-secondary mb-1">
+                            <i class="fas fa-map-marker-alt text-danger me-1"></i> Dirección de Entrega <span class="text-danger">*</span>
+                        </label>
+                        <input type="text" id="direccion_entrega" class="form-control form-control-sm"
+                               placeholder="Ej: Av. San Martín 450, Dpto 2B">
+                    </div>
+                </div>
+
+                <!-- MÉTODO DE PAGO Y TIPO DE COMPROBANTE -->
+                <div class="row g-2 mb-3">
+                    <div class="col-6">
+                        <label class="form-label small fw-semibold text-secondary mb-1">Método de Pago Inicial</label>
+                        <select id="metodo_pago" class="form-select">
+                            <option value="EFECTIVO">Efectivo</option>
+                            <option value="TARJETA_DEBITO">Tarjeta de Débito</option>
+                            <option value="TARJETA_CREDITO">Tarjeta de Crédito</option>
+                            <option value="TRANSFERENCIA">Mercado Pago / Transferencia</option>
+                        </select>
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label small fw-semibold text-secondary mb-1">Comprobante Fiscal</label>
+                        <select id="tipo_comprobante" class="form-select">
+                            {% if condicion_iva_emisor == 'RI' %}
+                                <option value="1">Factura A</option>
+                                <option value="6" selected>Factura B</option>
+                                <option value="11">Factura C</option>
+                            {% elif condicion_iva_emisor == 'MO' %}
+                                <option value="11" selected>Factura C</option>
+                            {% elif condicion_iva_emisor == 'EX' %}
+                                <option value="6" selected>Factura B</option>
+                                <option value="11">Factura C</option>
+                            {% else %}
+                                <option value="6" selected>Factura B</option>
+                                <option value="11">Factura C</option>
+                            {% endif %}
+                            <option value="0">Ticket / Presupuesto / Remito (R)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- MONTO RECIBIDO Y VUELTO -->
+                <div class="p-2 bg-body-tertiary rounded mb-3">
+                    <div class="row g-2 align-items-center">
+                        <div class="col-6">
+                            <label class="form-label small fw-semibold text-secondary mb-0">Recibido ($)</label>
+                            <input type="number" id="monto_recibido" class="form-control form-control-sm text-end fw-bold" step="0.01" min="0" value="0.00">
+                        </div>
+                        <div class="col-6 text-end">
+                            <span class="d-block small text-secondary">Vuelto</span>
+                            <span id="vuelto_display" class="fs-5 fw-bold text-success">$0.00</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TOTAL DISPLAY -->
                 <div class="p-3 bg-body-tertiary rounded mb-3 d-flex justify-content-between align-items-center">
                     <span class="fs-5 fw-bold">TOTAL</span>
                     <span id="total_display" class="fs-2 fw-bold text-success">$0.00</span>
                 </div>
 
-                <button type="button" id="btn_procesar_venta" class="btn btn-success btn-lg w-100 py-3 fw-bold shadow-sm">
-                    <i class="fas fa-check-circle me-2"></i> Procesar Venta
+                <button type="button" id="btn_abrir_opciones_venta" class="btn btn-success btn-lg w-100 py-3 fw-bold shadow-sm">
+                    <i class="fas fa-check-circle me-2"></i> Procesar Operación
                 </button>
             </div>
         </div>
     </div>
 </div>
 
-<!-- VENTANA MODAL PARA LECTOR DE CÁMARA (MÓVIL) -->
+<!-- MODAL LECTOR CÁMARA -->
 <div id="overlayEscaner" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0, 0, 0, 0.85); z-index: 9999; align-items: center; justify-content: center;">
     <div class="card border-0" style="width: 90%; max-width: 400px; border-radius: 12px; overflow: hidden;">
         <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center py-2">
@@ -131,24 +223,52 @@
     </div>
 </div>
 
-<!-- MODAL POST-VENTA (Opciones al Cobrar) -->
+<!-- MODAL OPCIONES DE VENTA -->
+<div id="overlayOpcionesVenta" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0, 0, 0, 0.75); z-index: 9997; align-items: center; justify-content: center;">
+    <div class="card border-0 shadow-lg" style="width: 95%; max-width: 480px; border-radius: 12px; overflow: hidden;">
+        <div class="card-header bg-primary text-white py-3 text-center border-0">
+            <h5 class="mb-0 fw-bold"><i class="fas fa-file-invoice me-2"></i> Tipo de Emisión / Destino</h5>
+        </div>
+        <div class="card-body p-4">
+            <p class="text-muted small text-center mb-3">Selecciona el tipo de comprobante o la acción deseada para este pedido:</p>
+            <div class="d-grid gap-2">
+                <button type="button" class="btn btn-outline-info py-2 fw-semibold text-start px-3 btn-accion-venta" data-accion="PRESUPUESTO">
+                    <i class="fas fa-file-alt me-2"></i> 1. Generar Presupuesto (Letra R)
+                </button>
+                <button type="button" class="btn btn-warning py-2 fw-semibold text-start px-3 btn-accion-venta" data-accion="REMITO">
+                    <i class="fas fa-truck me-2"></i> 2. Remito de Reparto (Asignar a Calle)
+                </button>
+                <button type="button" class="btn btn-success py-2 fw-semibold text-start px-3 btn-accion-venta" data-accion="FACTURA">
+                    <i class="fas fa-receipt me-2"></i> 3. Facturar Directo en ARCA / AFIP
+                </button>
+                <button type="button" class="btn btn-secondary py-2 fw-semibold text-start px-3 btn-accion-venta" data-accion="ENVIAR">
+                    <i class="fas fa-envelope me-2"></i> 4. Solo Enviar Comprobante / Guardar
+                </button>
+            </div>
+        </div>
+        <div class="card-footer bg-body-tertiary text-center py-2 border-0">
+            <button type="button" class="btn btn-sm btn-outline-secondary px-4 fw-bold" id="btn_cancelar_opciones">Cancelar</button>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL POST-VENTA -->
 <div id="overlayPostVenta" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0, 0, 0, 0.75); z-index: 9998; align-items: center; justify-content: center;">
     <div class="card border-0 shadow-lg" style="width: 95%; max-width: 500px; border-radius: 12px; overflow: hidden;">
         <div class="card-header bg-success text-white py-3 text-center border-0">
-            <h4 class="mb-0 fw-bold"><i class="fas fa-check-circle me-2"></i> ¡Venta Exitosa!</h4>
+            <h4 class="mb-0 fw-bold"><i class="fas fa-check-circle me-2"></i> ¡Operación Registrada!</h4>
         </div>
         <div class="card-body p-4 text-center">
-            <p class="fs-5 mb-4">Comprobante generado: <strong id="modal_venta_id" class="text-success">#0</strong></p>
+            <p class="fs-5 mb-1">Comprobante ID: <strong id="modal_venta_id" class="text-success">#0</strong></p>
+            <p class="small text-muted mb-4" id="modal_estado_display"></p>
 
             <div class="d-grid gap-3">
                 <button type="button" class="btn btn-outline-primary btn-lg fw-bold text-start p-3" id="btn_imprimir_ticket">
                     <i class="fas fa-receipt me-3 text-primary fa-lg"></i> Imprimir Ticket Térmico (80mm)
                 </button>
-
                 <button type="button" class="btn btn-outline-dark btn-lg fw-bold text-start p-3" id="btn_imprimir_factura">
-                    <i class="fas fa-file-invoice-dollar me-3 text-dark fa-lg"></i> Ver / Descargar Factura (A4)
+                    <i class="fas fa-file-invoice-dollar me-3 text-dark fa-lg"></i> Ver / Descargar Documento (A4 / Remito R)
                 </button>
-
                 <div class="border rounded p-3 text-start bg-body-tertiary mt-2">
                     <label class="form-label fw-bold small text-secondary mb-1">
                         <i class="fas fa-envelope me-1"></i> Enviar Comprobante por Email
@@ -164,71 +284,172 @@
         </div>
         <div class="card-footer bg-body-tertiary text-center py-3 border-0">
             <button type="button" class="btn btn-secondary px-5 fw-bold" id="btn_cerrar_modal">
-                Nueva Venta <i class="fas fa-arrow-right ms-1"></i>
+                Nueva Operación <i class="fas fa-arrow-right ms-1"></i>
             </button>
         </div>
     </div>
 </div>
 
-<!-- JavaScript para el POS, Cámara y Procesamiento AJAX -->
 <script>
 document.addEventListener('DOMContentLoaded', function () {
     let carrito = [];
     let ultimaVentaId = null;
     let html5QrcodeScanner = null;
 
+    // ============================================================
+    // REFERENCIAS A ELEMENTOS
+    // ============================================================
     const buscarInput = document.getElementById('buscar_input');
     const btnBuscar = document.getElementById('btn_buscar');
     const resultadosDiv = document.getElementById('resultados_busqueda');
     const carritoBody = document.getElementById('carrito_body');
     const totalDisplay = document.getElementById('total_display');
-    const btnProcesar = document.getElementById('btn_procesar_venta');
+    const vueltoDisplay = document.getElementById('vuelto_display');
+    const montoRecibidoInput = document.getElementById('monto_recibido');
+    const btnAbrirOpciones = document.getElementById('btn_abrir_opciones_venta');
     const btnVaciar = document.getElementById('btn_vaciar_carrito');
 
-    // Escáner Cámara
     const overlayEscaner = document.getElementById('overlayEscaner');
     const btnAbrirEscaner = document.getElementById('btn_abrir_escaner');
     const btnCamaraInput = document.getElementById('btn_camara_input');
     const btnCerrarEscaner = document.getElementById('btn_cerrar_escaner');
     const btnCancelarEscaner = document.getElementById('btn_cancelar_escaner');
 
-    // Modal Post-Venta
+    const overlayOpcionesVenta = document.getElementById('overlayOpcionesVenta');
+    const btnCancelarOpciones = document.getElementById('btn_cancelar_opciones');
     const overlayPostVenta = document.getElementById('overlayPostVenta');
     const modalVentaId = document.getElementById('modal_venta_id');
+    const modalEstadoDisplay = document.getElementById('modal_estado_display');
     const emailInput = document.getElementById('email_cliente_input');
 
-    // Sonido y vibración al escanear
+    // ============================================================
+    // TOGGLE LOCAL vs ENVÍO
+    // ============================================================
+    const radiosEntrega = document.querySelectorAll('input[name="tipo_entrega"]');
+    const bloqueEnvio = document.getElementById('bloque_envio');
+    const repartidorSelect = document.getElementById('repartidor_id');
+    const direccionInput = document.getElementById('direccion_entrega');
+
+    function actualizarTipoEntrega() {
+        const tipo = document.querySelector('input[name="tipo_entrega"]:checked').value;
+        if (tipo === 'ENVIO') {
+            bloqueEnvio.style.display = 'block';
+        } else {
+            bloqueEnvio.style.display = 'none';
+            if (repartidorSelect) repartidorSelect.value = '';
+            if (direccionInput) direccionInput.value = '';
+        }
+    }
+
+    radiosEntrega.forEach(r => r.addEventListener('change', actualizarTipoEntrega));
+    actualizarTipoEntrega();  // Ejecutar al cargar
+
+    // ============================================================
+    // PERSISTENCIA DEL CARRITO
+    // ============================================================
+    function guardarEstadoPOS() {
+        const tipoEntrega = document.querySelector('input[name="tipo_entrega"]:checked').value;
+        const estado = {
+            carrito: carrito,
+            cliente_id: document.getElementById('cliente_id').value,
+            vendedor_id: document.getElementById('vendedor_id') ? document.getElementById('vendedor_id').value : '',
+            tipo_entrega: tipoEntrega,
+            repartidor_id: repartidorSelect ? repartidorSelect.value : '',
+            direccion_entrega: direccionInput ? direccionInput.value : '',
+            metodo_pago: document.getElementById('metodo_pago').value,
+            tipo_comprobante: document.getElementById('tipo_comprobante').value,
+            monto_recibido: montoRecibidoInput.value,
+        };
+        localStorage.setItem('pos_backup', JSON.stringify(estado));
+    }
+
+    function restaurarEstadoPOS() {
+        const backup = localStorage.getItem('pos_backup');
+        if (!backup) return;
+
+        try {
+            const data = JSON.parse(backup);
+            carrito = data.carrito || [];
+            renderizarCarrito();
+
+            if (data.cliente_id) document.getElementById('cliente_id').value = data.cliente_id;
+            if (data.vendedor_id && document.getElementById('vendedor_id')) {
+                document.getElementById('vendedor_id').value = data.vendedor_id;
+            }
+            if (data.metodo_pago) document.getElementById('metodo_pago').value = data.metodo_pago;
+            if (data.tipo_comprobante) document.getElementById('tipo_comprobante').value = data.tipo_comprobante;
+            if (data.monto_recibido) {
+                montoRecibidoInput.value = data.monto_recibido;
+                calcularVuelto();
+            }
+
+            // Restaurar tipo de entrega
+            if (data.tipo_entrega === 'ENVIO') {
+                document.getElementById('tipo_envio').checked = true;
+                actualizarTipoEntrega();
+                if (data.repartidor_id) repartidorSelect.value = data.repartidor_id;
+                if (data.direccion_entrega) direccionInput.value = data.direccion_entrega;
+            } else {
+                document.getElementById('tipo_local').checked = true;
+                actualizarTipoEntrega();
+            }
+
+            localStorage.removeItem('pos_backup');
+
+            if (carrito.length > 0) {
+                console.log(`✅ Carrito restaurado: ${carrito.length} productos.`);
+            }
+        } catch (e) {
+            console.error('Error restaurando POS:', e);
+            localStorage.removeItem('pos_backup');
+        }
+    }
+
+    restaurarEstadoPOS();
+
+    // Botón "Nuevo Cliente"
+    const btnNuevoCliente = document.getElementById('btn_nuevo_cliente');
+    if (btnNuevoCliente) {
+        btnNuevoCliente.addEventListener('click', function (e) {
+            e.preventDefault();
+            guardarEstadoPOS();
+            window.location.href = "{% url 'ventas:crear_cliente' %}?next={% url 'ventas:pos' %}";
+        });
+    }
+
+    window.addEventListener('beforeunload', function () {
+        if (carrito.length > 0) {
+            guardarEstadoPOS();
+        }
+    });
+
+    // ============================================================
+    // SONIDO Y CÁMARA
+    // ============================================================
     function reproducirBeep() {
         try {
             const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
             const osc = audioCtx.createOscillator();
             const gain = audioCtx.createGain();
-
             osc.type = 'sine';
             osc.frequency.setValueAtTime(1046.50, audioCtx.currentTime);
             gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
             gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.15);
-
             osc.connect(gain);
             gain.connect(audioCtx.destination);
-
             osc.start();
             osc.stop(audioCtx.currentTime + 0.15);
         } catch (e) {}
-
         if (navigator.vibrate) navigator.vibrate(100);
     }
 
-    // Funciones del Escáner de Cámara
     function iniciarCamara() {
         overlayEscaner.style.display = 'flex';
         if (!html5QrcodeScanner) html5QrcodeScanner = new Html5Qrcode("reader");
-
         const config = { fps: 10, qrbox: { width: 220, height: 140 } };
-
         html5QrcodeScanner.start({ facingMode: "environment" }, config, onScanSuccess)
             .catch(err => {
-                alert("No se pudo acceder a la cámara. Asegúrate de dar los permisos correspondientes.");
+                alert("No se pudo acceder a la cámara. Asegurate de dar los permisos correspondientes.");
                 detenerCamara();
             });
     }
@@ -245,10 +466,8 @@ document.addEventListener('DOMContentLoaded', function () {
     function onScanSuccess(decodedText) {
         detenerCamara();
         reproducirBeep();
-
         const codigoLimpio = decodedText.trim();
         buscarInput.value = codigoLimpio;
-
         fetch(`{% url 'ventas:buscar_producto_ajax' %}?term=${encodeURIComponent(codigoLimpio)}`)
             .then(res => res.json())
             .then(data => {
@@ -268,14 +487,12 @@ document.addEventListener('DOMContentLoaded', function () {
     if (btnCerrarEscaner) btnCerrarEscaner.addEventListener('click', detenerCamara);
     if (btnCancelarEscaner) btnCancelarEscaner.addEventListener('click', detenerCamara);
 
-    // Búsqueda de Productos manual por teclado
+    // ============================================================
+    // BÚSQUEDA DE PRODUCTOS
+    // ============================================================
     function buscarProductos() {
         const query = buscarInput.value.trim();
-        if (query.length < 1) {
-            resultadosDiv.style.display = 'none';
-            return;
-        }
-
+        if (query.length < 1) { resultadosDiv.style.display = 'none'; return; }
         fetch(`{% url 'ventas:buscar_producto_ajax' %}?term=${encodeURIComponent(query)}`)
             .then(response => response.json())
             .then(data => {
@@ -310,19 +527,19 @@ document.addEventListener('DOMContentLoaded', function () {
 
     buscarInput.addEventListener('input', buscarProductos);
     btnBuscar.addEventListener('click', buscarProductos);
-
     document.addEventListener('click', function (e) {
         if (!buscarInput.contains(e.target) && !resultadosDiv.contains(e.target)) {
             resultadosDiv.style.display = 'none';
         }
     });
 
-    // Lógica del Carrito
+    // ============================================================
+    // CARRITO
+    // ============================================================
     function agregarAlCarrito(producto) {
         const index = carrito.findIndex(p => p.id === producto.id);
-        if (index !== -1) {
-            carrito[index].cantidad += 1;
-        } else {
+        if (index !== -1) { carrito[index].cantidad += 1; }
+        else {
             carrito.push({
                 id: producto.id,
                 nombre: producto.nombre,
@@ -335,7 +552,6 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function renderizarCarrito() {
         carritoBody.innerHTML = '';
-
         if (carrito.length === 0) {
             carritoBody.innerHTML = `
                 <tr id="carrito_vacio">
@@ -343,18 +559,15 @@ document.addEventListener('DOMContentLoaded', function () {
                         <i class="fas fa-shopping-bag fa-2x mb-2 opacity-25 d-block"></i>
                         Carrito vacío.
                     </td>
-                </tr>
-            `;
+                </tr>`;
             totalDisplay.textContent = '$0.00';
+            vueltoDisplay.textContent = '$0.00';
             return;
         }
-
         let total = 0;
-
         carrito.forEach((prod, idx) => {
             const subtotal = prod.precio * prod.cantidad;
             total += subtotal;
-
             const tr = document.createElement('tr');
             tr.innerHTML = `
                 <td><strong>${prod.nombre}</strong></td>
@@ -367,24 +580,18 @@ document.addEventListener('DOMContentLoaded', function () {
                     <button class="btn btn-sm btn-link text-danger btn-del p-0" data-idx="${idx}">
                         <i class="fas fa-times"></i>
                     </button>
-                </td>
-            `;
+                </td>`;
             carritoBody.appendChild(tr);
         });
-
         totalDisplay.textContent = `$${total.toFixed(2)}`;
-
+        calcularVuelto(total);
         document.querySelectorAll('.input-cant').forEach(i => {
             i.addEventListener('change', function() {
                 const idx = parseInt(this.dataset.idx);
                 const val = parseInt(this.value);
-                if (val > 0) {
-                    carrito[idx].cantidad = val;
-                    renderizarCarrito();
-                }
+                if (val > 0) { carrito[idx].cantidad = val; renderizarCarrito(); }
             });
         });
-
         document.querySelectorAll('.btn-del').forEach(b => {
             b.addEventListener('click', function() {
                 const idx = parseInt(this.dataset.idx);
@@ -394,32 +601,92 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
+    function calcularVuelto(totalCalculado) {
+        const total = totalCalculado !== undefined ? totalCalculado : carrito.reduce((acc, p) => acc + (p.precio * p.cantidad), 0);
+        const recibido = parseFloat(montoRecibidoInput.value) || 0;
+        const vuelto = Math.max(0, recibido - total);
+        vueltoDisplay.textContent = `$${vuelto.toFixed(2)}`;
+    }
+
+    montoRecibidoInput.addEventListener('input', () => calcularVuelto());
+
     btnVaciar.addEventListener('click', function() {
         carrito = [];
+        localStorage.removeItem('pos_backup');
         renderizarCarrito();
     });
 
-    // PROCESAR VENTA AJAX
-    btnProcesar.addEventListener('click', function () {
+    btnAbrirOpciones.addEventListener('click', function() {
         if (carrito.length === 0) {
             alert('Por favor agrega al menos un producto al carrito antes de procesar.');
             return;
         }
+        overlayOpcionesVenta.style.display = 'flex';
+    });
 
+    btnCancelarOpciones.addEventListener('click', function() {
+        overlayOpcionesVenta.style.display = 'none';
+    });
+
+    document.querySelectorAll('.btn-accion-venta').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const accionComprobante = this.dataset.accion;
+            overlayOpcionesVenta.style.display = 'none';
+            procesarVenta(accionComprobante);
+        });
+    });
+
+    // ============================================================
+    // PROCESAR VENTA (con validaciones)
+    // ============================================================
+    function procesarVenta(accionComprobante) {
+        const tipoEntrega = document.querySelector('input[name="tipo_entrega"]:checked').value;
         const clienteId = document.getElementById('cliente_id').value;
+        const vendedorId = document.getElementById('vendedor_id').value;
+        const repartidorId = tipoEntrega === 'ENVIO' ? repartidorSelect.value : '';
+        const direccionEntrega = tipoEntrega === 'ENVIO' ? direccionInput.value.trim() : '';
         const metodoPago = document.getElementById('metodo_pago').value;
+        const tipoComprobante = parseInt(document.getElementById('tipo_comprobante').value);
+        const montoRecibido = parseFloat(montoRecibidoInput.value) || 0;
+
+        // 🔽 Validación: si es ENVÍO, exige repartidor y dirección
+        if (tipoEntrega === 'ENVIO') {
+            if (!repartidorId) {
+                alert('⚠️ Debés seleccionar un repartidor para el envío.');
+                repartidorSelect.focus();
+                return;
+            }
+            if (!direccionEntrega) {
+                alert('⚠️ Debés ingresar una dirección de entrega.');
+                direccionInput.focus();
+                return;
+            }
+        }
+
+                // 🔽 Validación: si es REMITO, exige que sea ENVÍO
+        if (accionComprobante === 'REMITO' && tipoEntrega !== 'ENVIO') {
+            alert('⚠️ Un Remito de Reparto requiere que selecciones "Envío a Domicilio".');
+            return;
+        }
 
         const payload = {
-            cliente_id: clienteId || null,
+            cliente_id: clienteId ? parseInt(clienteId) : null,
+            repartidor_id: repartidorId ? parseInt(repartidorId) : null,
+            vendedor_id: vendedorId ? parseInt(vendedorId) : null,
+            direccion_entrega: direccionEntrega,
             metodo_pago: metodoPago,
+            tipo_comprobante: tipoComprobante,
+            monto_recibido: montoRecibido,
+            accion_comprobante: accionComprobante,
             items: carrito
         };
 
-        btnProcesar.disabled = true;
-        btnProcesar.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i> Procesando...';
+        btnAbrirOpciones.disabled = true;
+        btnAbrirOpciones.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i> Procesando...';
 
         fetch('{% url "ventas:procesar_venta_ajax" %}', {
             method: 'POST',
+            credentials: 'same-origin',
             headers: {
                 'Content-Type': 'application/json',
                 'X-CSRFToken': '{{ csrf_token }}'
@@ -428,33 +695,38 @@ document.addEventListener('DOMContentLoaded', function () {
         })
         .then(res => res.json())
         .then(data => {
-            btnProcesar.disabled = false;
-            btnProcesar.innerHTML = '<i class="fas fa-check-circle me-2"></i> Procesar Venta';
+            btnAbrirOpciones.disabled = false;
+            btnAbrirOpciones.innerHTML = '<i class="fas fa-check-circle me-2"></i> Procesar Operación';
 
-            // ✅ CORRECCIÓN: Cambiamos data.success por data.status === 'success'
             if (data.status === 'success') {
+                localStorage.removeItem('pos_backup');
                 carrito = [];
                 renderizarCarrito();
 
-                // Abrir modal de opciones post-venta
+                document.getElementById('cliente_id').value = '';
+                document.getElementById('repartidor_id').value = '';
+                document.getElementById('direccion_entrega').value = '';
+                document.getElementById('metodo_pago').value = 'EFECTIVO';
+                montoRecibidoInput.value = '0.00';
+                vueltoDisplay.textContent = '$0.00';
+
                 ultimaVentaId = data.venta_id;
                 modalVentaId.textContent = '#' + ultimaVentaId;
-                // Si la vista devuelve el email, lo asignamos
+                modalEstadoDisplay.textContent = `Estado: ${data.estado_display}` + (data.repartidor ? ` | Repartidor: ${data.repartidor}` : '');
                 emailInput.value = data.cliente_email || '';
                 overlayPostVenta.style.display = 'flex';
             } else {
-                alert('Error al procesar la venta: ' + (data.message || 'Ocurrió un problema en el servidor.'));
+                alert('Error al procesar: ' + (data.message || 'Ocurrió un problema en el servidor.'));
             }
         })
         .catch(err => {
-            btnProcesar.disabled = false;
-            btnProcesar.innerHTML = '<i class="fas fa-check-circle me-2"></i> Procesar Venta';
+            btnAbrirOpciones.disabled = false;
+            btnAbrirOpciones.innerHTML = '<i class="fas fa-check-circle me-2"></i> Procesar Operación';
             console.error("Error AJAX:", err);
-            alert('Ocurrió un error de red al procesar la venta.');
+            alert('Ocurrió un error de red al procesar la operación.');
         });
-    });
+    }
 
-    // Botones del Modal Post-Venta
     document.getElementById('btn_imprimir_ticket').addEventListener('click', function() {
         if (ultimaVentaId) window.open(`/ventas/comprobante/${ultimaVentaId}/ticket/`, '_blank');
     });

@@ -19,11 +19,11 @@ def configuracion_general(request):
     config, _ = EmpresaConfig.objects.get_or_create(id=1)
 
     if request.method == 'POST':
-        # Bloqueo explícito: Solo el Superusuario puede guardar los cambios
         if not request.user.is_superuser:
             messages.error(
-                request, 
-                'Acceso denegado: Tienes permisos de lectura. Solo el Superusuario puede modificar la configuración.'
+                request,
+                'Acceso denegado: Tenés permisos de lectura. '
+                'Solo el Superusuario puede modificar la configuración.'
             )
             return redirect('configuracion:configuracion_general')
 
@@ -31,21 +31,25 @@ def configuracion_general(request):
         if form.is_valid():
             form.save()
             messages.success(
-                request, 
+                request,
                 'La configuración de la empresa y datos de ARCA se han actualizado correctamente.'
             )
             return redirect('configuracion:configuracion_general')
         else:
-            messages.error(request, 'Por favor revisa los errores en el formulario.')
+            messages.error(request, 'Por favor revisá los errores en el formulario.')
     else:
         form = EmpresaConfigForm(instance=config)
 
+    # Modo actual para el badge y las advertencias del template
+    modo_actual = 'PRODUCCION' if config.ambiente_arca == 'PROD' else 'HOMOLOGACION'
+
     return render(
-        request, 
-        'configuracion/empresa_config.html', 
+        request,
+        'configuracion/empresa_config.html',
         {
-            'form': form, 
+            'form': form,
             'config': config,
-            'es_readonly': not request.user.is_superuser  # Bandera útil para deshabilitar campos en el HTML
+            'es_readonly': not request.user.is_superuser,
+            'modo_actual': modo_actual,
         }
     )

@@ -29,11 +29,20 @@
 <!-- FILTRO DE PERÍODO -->
 <div class="card border-0 shadow-sm mb-4 no-print">
     <div class="card-body py-3">
-        <form method="GET" class="row g-2 align-items-center">
-            <div class="col-auto">
-                <label class="fw-bold small text-secondary">Período:</label>
+        <form method="GET" class="row g-2 align-items-end">
+
+            <!-- Selector de modo -->
+            <div class="col-md-2">
+                <label class="fw-bold small text-secondary d-block">Tipo de filtro</label>
+                <select name="modo" id="modo_select" class="form-select form-select-sm">
+                    <option value="mes" {% if modo != 'rango' %}selected{% endif %}>Por Mes / Año</option>
+                    <option value="rango" {% if modo == 'rango' %}selected{% endif %}>Por Rango de Fechas</option>
+                </select>
             </div>
-            <div class="col-auto">
+
+            <!-- Bloque MES/AÑO -->
+            <div class="col-md-2" id="bloque_mes">
+                <label class="fw-bold small text-secondary d-block">Mes</label>
                 <select name="mes" class="form-select form-select-sm">
                     <option value="1" {% if mes_sel == 1 %}selected{% endif %}>Enero</option>
                     <option value="2" {% if mes_sel == 2 %}selected{% endif %}>Febrero</option>
@@ -49,27 +58,51 @@
                     <option value="12" {% if mes_sel == 12 %}selected{% endif %}>Diciembre</option>
                 </select>
             </div>
-            <div class="col-auto">
+
+            <div class="col-md-2" id="bloque_anio">
+                <label class="fw-bold small text-secondary d-block">Año</label>
                 <select name="anio" class="form-select form-select-sm">
                     {% for a in anios_disponibles %}
                         <option value="{{ a }}" {% if anio_sel == a %}selected{% endif %}>{{ a }}</option>
                     {% endfor %}
                 </select>
             </div>
-            <div class="col-auto">
-                <button type="submit" class="btn btn-sm btn-primary fw-semibold">
+
+            <!-- Bloque RANGO -->
+            <div class="col-md-2" id="bloque_desde" style="display: none;">
+                <label class="fw-bold small text-secondary d-block">Desde</label>
+                <input type="date" name="fecha_desde" class="form-control form-control-sm"
+                       value="{{ fecha_desde }}">
+            </div>
+
+            <div class="col-md-2" id="bloque_hasta" style="display: none;">
+                <label class="fw-bold small text-secondary d-block">Hasta</label>
+                <input type="date" name="fecha_hasta" class="form-control form-control-sm"
+                       value="{{ fecha_hasta }}">
+            </div>
+
+            <!-- Botón -->
+            <div class="col-md-2">
+                <button type="submit" class="btn btn-sm btn-primary fw-semibold w-100">
                     <i class="fas fa-sync-alt me-1"></i> Actualizar
                 </button>
             </div>
         </form>
+
+        <!-- Descripción del rango activo -->
+        {% if rango_descripcion %}
+        <div class="mt-2 small text-muted">
+            <i class="fas fa-info-circle me-1"></i> Mostrando datos de: <strong>{{ rango_descripcion }}</strong>
+        </div>
+        {% endif %}
     </div>
 </div>
 
-<!-- TARJETAS DE MÉTRICAS MANTENIMIENTO Y GANANCIA -->
+<!-- TARJETAS DE MÉTRICAS -->
 <div class="row g-3 mb-4">
     <div class="col-12 col-md-3">
         <div class="card border-0 shadow-sm p-3 border-start border-4 border-success h-100">
-            <span class="text-muted small fw-bold text-uppercase">Facturación Mensual</span>
+            <span class="text-muted small fw-bold text-uppercase">Facturación</span>
             <h3 class="fw-bold text-success mb-0">${{ total_recaudado|floatformat:2 }}</h3>
         </div>
     </div>
@@ -89,19 +122,13 @@
     <div class="col-12 col-md-3">
         <div class="card border-0 shadow-sm p-3 border-start border-4 border-warning h-100">
             <span class="text-muted small fw-bold text-uppercase">Ticket Promedio</span>
-            <h3 class="fw-bold text-warning mb-0">
-                {% if total_operaciones > 0 %}
-                    ${{ total_recaudado|divisibleby:total_operaciones|default:0|floatformat:2 }}
-                {% else %}
-                    $0.00
-                {% endif %}
-            </h3>
+            <h3 class="fw-bold text-warning mb-0">${{ ticket_promedio|floatformat:2 }}</h3>
         </div>
     </div>
 </div>
 
 <div class="row g-4 mb-4">
-    <!-- MEDIOS DE PAGO Y COBRANZAS -->
+    <!-- MEDIOS DE PAGO -->
     <div class="col-12 col-lg-6">
         <div class="card border-0 shadow-sm h-100">
             <div class="card-header bg-body py-3 border-bottom">
@@ -167,7 +194,7 @@
 </div>
 
 <div class="row g-4">
-    <!-- PROVEEDORES MÁS DEMANDADOS -->
+    <!-- PROVEEDORES -->
     <div class="col-12 col-lg-6">
         <div class="card border-0 shadow-sm h-100">
             <div class="card-header bg-body py-3 border-bottom">
@@ -198,7 +225,7 @@
         </div>
     </div>
 
-    <!-- RENDIMIENTO DE VENDEDORES -->
+    <!-- VENDEDORES -->
     <div class="col-12 col-lg-6">
         <div class="card border-0 shadow-sm h-100">
             <div class="card-header bg-body py-3 border-bottom">
@@ -230,14 +257,40 @@
     </div>
 </div>
 
+<!-- SCRIPT: Alternar modo + Exportar Excel -->
 <script>
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', function () {
+    // 🔽 Alternar entre "Por Mes/Año" y "Por Rango de Fechas"
+    const modoSelect = document.getElementById('modo_select');
+    const bloqueMes = document.getElementById('bloque_mes');
+    const bloqueAnio = document.getElementById('bloque_anio');
+    const bloqueDesde = document.getElementById('bloque_desde');
+    const bloqueHasta = document.getElementById('bloque_hasta');
+
+    function actualizarModo() {
+        if (modoSelect.value === 'rango') {
+            bloqueMes.style.display = 'none';
+            bloqueAnio.style.display = 'none';
+            bloqueDesde.style.display = '';
+            bloqueHasta.style.display = '';
+        } else {
+            bloqueMes.style.display = '';
+            bloqueAnio.style.display = '';
+            bloqueDesde.style.display = 'none';
+            bloqueHasta.style.display = 'none';
+        }
+    }
+
+    modoSelect.addEventListener('change', actualizarModo);
+    actualizarModo();
+
+    // 🔽 Exportar a Excel (CSV)
     const btnExcel = document.getElementById('btn-excel');
     if (btnExcel) {
-        btnExcel.addEventListener('click', function() {
+        btnExcel.addEventListener('click', function () {
             let csvContent = "\uFEFF";
             const tablas = document.querySelectorAll('table');
-            
+
             tablas.forEach((tabla) => {
                 const filas = tabla.querySelectorAll('tr');
                 filas.forEach(fila => {
@@ -256,7 +309,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const url = URL.createObjectURL(blob);
             const link = document.createElement('a');
             link.setAttribute('href', url);
-            link.setAttribute('download', 'Reporte_Ventas_{{ mes_sel }}_{{ anio_sel }}.csv');
+            link.setAttribute('download', 'Reporte_Ventas_{{ rango_descripcion|default:"" }}.csv'.replace(/[\/\\:]/g, '-'));
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);

@@ -1,0 +1,119 @@
+{% extends 'base.html' %}
+
+{% block title %}Repartidores{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3">
+
+    <!-- ENCABEZADO -->
+    <div class="card border-0 shadow-sm mb-3">
+        <div class="card-body">
+            <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+                <h4 class="fw-bold m-0">
+                    <i class="fas fa-motorcycle text-warning me-2"></i> Repartidores
+                </h4>
+                <a href="{% url 'ventas:crear_repartidor' %}" class="btn btn-success fw-bold">
+                    <i class="fas fa-plus-circle me-1"></i> Nuevo Repartidor
+                </a>
+            </div>
+
+            <!-- FILTROS -->
+            <form method="GET" class="row g-2">
+                <div class="col-md-6">
+                    <input type="text" name="q" class="form-control form-control-sm"
+                           placeholder="Buscar por nombre, DNI, zona, vehículo..."
+                           value="{{ busqueda }}">
+                </div>
+                <div class="col-md-3 d-flex align-items-center">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" name="activo"
+                               value="1" id="chk_activo" {% if filtro_activo == '1' %}checked{% endif %}>
+                        <label class="form-check-label small" for="chk_activo">
+                            Solo activos
+                        </label>
+                    </div>
+                </div>
+                <div class="col-md-3 d-flex gap-1">
+                    <button type="submit" class="btn btn-sm btn-primary flex-grow-1">
+                        <i class="fas fa-search me-1"></i> Filtrar
+                    </button>
+                    <a href="{% url 'ventas:lista_repartidores' %}" class="btn btn-sm btn-outline-secondary">
+                        <i class="fas fa-undo"></i>
+                    </a>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- TABLA -->
+    <div class="card border-0 shadow-sm">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th class="ps-3">Nombre</th>
+                            <th>Usuario</th>
+                            <th>DNI</th>
+                            <th>Teléfono</th>
+                            <th>Vehículo</th>
+                            <th>Zona</th>
+                            <th class="text-center">Estado</th>
+                            <th class="text-center">Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for r in repartidores %}
+                        <tr {% if not r.activo %}class="table-secondary"{% endif %}>
+                            <td class="ps-3 fw-bold">
+                                {{ r.user.get_full_name|default:r.user.username }}
+                            </td>
+                            <td class="small text-muted">{{ r.user.username }}</td>
+                            <td class="small">{{ r.dni|default:"-" }}</td>
+                            <td class="small">{{ r.telefono|default:"-" }}</td>
+                            <td class="small">
+                                {{ r.vehiculo|default:"-" }}
+                                {% if r.patente %}
+                                    <br><span class="badge bg-secondary">{{ r.patente }}</span>
+                                {% endif %}
+                            </td>
+                            <td class="small">{{ r.zona|default:"-" }}</td>
+                            <td class="text-center">
+                                {% if r.activo %}
+                                    <span class="badge bg-success">
+                                        <i class="fas fa-check-circle me-1"></i> Activo
+                                    </span>
+                                {% else %}
+                                    <span class="badge bg-secondary">
+                                        <i class="fas fa-times-circle me-1"></i> Inactivo
+                                    </span>
+                                {% endif %}
+                            </td>
+                            <td class="text-center">
+                                <a href="{% url 'ventas:editar_repartidor' r.id %}"
+                                   class="btn btn-sm btn-outline-primary" title="Editar">
+                                    <i class="fas fa-edit"></i>
+                                </a>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="8" class="text-center py-5 text-muted">
+                                <i class="fas fa-motorcycle fa-3x mb-3 d-block opacity-25"></i>
+                                <strong>No hay repartidores registrados.</strong>
+                                <p class="mb-0 small">Clic en "Nuevo Repartidor" para agregar el primero.</p>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% if total %}
+        <div class="card-footer bg-body py-2 small text-muted">
+            Total: <strong>{{ total }}</strong> repartidor(es)
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

@@ -10,7 +10,7 @@ SECRET_KEY = 'django-insecure-iyz%l0@j&fv89an+%dnnlwm5i+r@$m#5-(b-lp7(l!&qk+ubt9
 
 DEBUG = True
 
-ALLOWED_HOSTS = ['localhost', '127.0.0.1', '192.168.1.15', '*']
+ALLOWED_HOSTS = ['localhost', '127.0.0.1', '10.0.10.196', '*']
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -57,25 +57,10 @@ TEMPLATES = [
                 
                 # 👈 AGREGA ESTA LÍNEA AQUÍ:
                 'apps.configuracion.context_processors.configuracion_global',
-                'apps.core.context_processors.roles_usuario',
             ],
         },
     },
 ]
-
-LOGGING = {
-    'version': 1,
-    'disable_existing_loggers': False,
-    'handlers': {
-        'console': {
-            'class': 'logging.StreamHandler',
-        },
-    },
-    'root': {
-        'handlers': ['console'],
-        'level': 'DEBUG',
-    },
-}
 
 WSGI_APPLICATION = 'sistema_ventas.wsgi.application'
 

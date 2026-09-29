@@ -1,0 +1,277 @@
+{% extends 'base.html' %}
+
+{% block title %}Registrar Pago - {{ cliente.nombre }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3">
+    <div class="row justify-content-center">
+        <div class="col-12 col-lg-9">
+
+            <!-- ENCABEZADO -->
+            <div class="card border-0 shadow-sm mb-3">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                        <div>
+                            <h4 class="fw-bold m-0">
+                                <i class="fas fa-money-bill-wave text-success me-2"></i> Registrar Pago
+                            </h4>
+                            <p class="small text-muted mb-0 mt-1">
+                                Cliente: <strong>{{ cliente.nombre }}</strong>
+                                {% if cliente.numero_documento %} | CUIT/DNI: {{ cliente.numero_documento }}{% endif %}
+                            </p>
+                        </div>
+                        <a href="{% url 'ventas:cuenta_corriente_cliente' cliente.id %}" class="btn btn-outline-secondary">
+                            <i class="fas fa-arrow-left me-1"></i> Volver a CC
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- AVISO SI VIENE CON FACTURA PRESELECCIONADA -->
+            {% if factura_preseleccionada %}
+            <div class="alert alert-info d-flex align-items-center">
+                <i class="fas fa-info-circle fa-2x me-3"></i>
+                <div>
+                    <strong>Estás cobrando el comprobante #{{ factura_preseleccionada.id }}</strong>
+                    <br>
+                    <small>Saldo pendiente: ${{ factura_preseleccionada.saldo_pendiente|floatformat:2 }}</small>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- KPI SALDO -->
+            <div class="card border-0 shadow-sm mb-3 border-start border-4 border-danger">
+                <div class="card-body py-3">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <span class="text-muted small fw-bold text-uppercase">Saldo Pendiente Total del Cliente</span>
+                            <h3 class="fw-bold text-danger mb-0">${{ saldo_total|floatformat:2 }}</h3>
+                        </div>
+                        <i class="fas fa-exclamation-triangle fa-3x text-danger opacity-25"></i>
+                    </div>
+                </div>
+            </div>
+
+            <!-- FORMULARIO -->
+            <form method="POST">
+                {% csrf_token %}
+
+                <!-- COMPROBANTES A COBRAR -->
+                <div class="card border-0 shadow-sm mb-3">
+                    <div class="card-header bg-body py-3 border-bottom d-flex justify-content-between align-items-center">
+                        <h6 class="fw-bold mb-0">
+                            <i class="fas fa-list-alt text-warning me-2"></i>
+                            ¿Qué comprobantes querés cobrar?
+                        </h6>
+                        <div class="d-flex gap-2">
+                            <button type="button" class="btn btn-sm btn-outline-primary" id="btn_sel_todos">
+                                Todos
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" id="btn_sel_ninguno">
+                                Ninguno
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-hover align-middle mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th style="width: 40px;" class="text-center">
+                                            <i class="fas fa-check"></i>
+                                        </th>
+                                        <th>#</th>
+                                        <th>Fecha</th>
+                                        <th>Tipo</th>
+                                        <th class="text-end">Total</th>
+                                        <th class="text-end">Saldo</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for p in pendientes %}
+                                    <tr {% if factura_preseleccionada and factura_preseleccionada.id == p.id %}class="table-info"{% endif %}>
+                                        <td class="text-center">
+                                            <input type="checkbox"
+                                                   class="form-check-input chk-comprobante"
+                                                   name="comprobantes"
+                                                   value="{{ p.id }}"
+                                                   data-saldo="{{ p.saldo_pendiente|floatformat:'2u' }}"
+                                                   {% if not factura_preseleccionada or factura_preseleccionada.id == p.id %}checked{% endif %}>
+                                        </td>
+                                        <td class="fw-bold">#{{ p.id }}</td>
+                                        <td class="small">{{ p.fecha|date:"d/m/Y" }}</td>
+                                        <td>
+                                            {% if p.es_remito %}
+                                                <span class="badge bg-warning text-dark">Remito</span>
+                                            {% else %}
+                                                <span class="badge bg-info text-dark">Factura</span>
+                                            {% endif %}
+                                        </td>
+                                        <td class="text-end">${{ p.total|floatformat:2 }}</td>
+                                        <td class="text-end fw-bold text-danger">${{ p.saldo_pendiente|floatformat:2 }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                                <tfoot class="table-secondary">
+                                    <tr>
+                                        <td colspan="5" class="text-end fw-bold">Total seleccionado:</td>
+                                        <td class="text-end fw-bold text-danger fs-6">$<span id="total_seleccionado">0.00</span></td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- DATOS DEL PAGO -->
+                <div class="card border-0 shadow-sm mb-3">
+                    <div class="card-header bg-body py-3 border-bottom">
+                        <h6 class="fw-bold mb-0">
+                            <i class="fas fa-edit text-primary me-2"></i> Datos del Pago
+                        </h6>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold small">
+                                    Monto a Cobrar ($) <span class="text-danger">*</span>
+                                </label>
+                                <input type="number"
+                                       name="monto"
+                                       id="monto_input"
+                                       class="form-control form-control-lg text-end fw-bold"
+                                       step="0.01"
+                                       min="0.01"
+                                       value="{% if factura_preseleccionada %}{{ factura_preseleccionada.saldo_pendiente|floatformat:'2u' }}{% else %}{{ saldo_total|floatformat:'2u' }}{% endif %}"
+                                       required>
+                                <small class="text-muted">
+                                    Se actualiza al tildar/destildar. Si lo editás a mano, se respeta tu valor.
+                                </small>
+                            </div>
+
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold small">Método de Pago <span class="text-danger">*</span></label>
+                                <select name="metodo_pago" class="form-select form-select-lg" required>
+                                    <option value="EFECTIVO" selected>Efectivo</option>
+                                    <option value="TRANSFERENCIA">Transferencia</option>
+                                    <option value="TARJETA">Tarjeta</option>
+                                    <option value="CHEQUE">Cheque</option>
+                                    <option value="OTRO">Otro</option>
+                                </select>
+                            </div>
+
+                            <div class="col-12">
+                                <label class="form-label fw-bold small">Observaciones</label>
+                                <textarea name="observaciones"
+                                          class="form-control"
+                                          rows="2"
+                                          placeholder="Ej: Pago parcial acordado, entrega de cheque N°..."></textarea>
+                            </div>
+                        </div>
+
+                        <!-- BOTONES RÁPIDOS -->
+                        <div class="mt-3">
+                            <label class="form-label fw-bold small text-muted">Montos rápidos:</label>
+                            <div class="d-flex gap-2 flex-wrap">
+                                <button type="button" class="btn btn-sm btn-outline-success btn-monto-rapido" data-monto="sel">
+                                    <i class="fas fa-calculator me-1"></i> Total seleccionado
+                                </button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary btn-monto-rapido" data-monto="10000">$10.000</button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary btn-monto-rapido" data-monto="20000">$20.000</button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary btn-monto-rapido" data-monto="50000">$50.000</button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary btn-monto-rapido" data-monto="100000">$100.000</button>
+                            </div>
+                        </div>
+
+                        <div class="d-flex justify-content-end gap-2 mt-4 border-top pt-3">
+                            <a href="{% url 'ventas:cuenta_corriente_cliente' cliente.id %}" class="btn btn-secondary px-4">
+                                Cancelar
+                            </a>
+                            <button type="submit" class="btn btn-success btn-lg fw-bold px-4">
+                                <i class="fas fa-check-circle me-1"></i> Registrar Pago
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </form>
+
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const checkboxes = document.querySelectorAll('.chk-comprobante');
+    const totalSpan = document.getElementById('total_seleccionado');
+    const montoInput = document.getElementById('monto_input');
+
+    // 🔽 Flag: ¿el usuario tocó el monto a mano?
+    let montoEditadoManualmente = false;
+
+    // Detectar si el usuario editó el monto a mano
+    montoInput.addEventListener('input', function () {
+        montoEditadoManualmente = true;
+    });
+
+    function calcularTotalSeleccionado() {
+        let total = 0;
+        checkboxes.forEach(c => {
+            if (c.checked) {
+                total += parseFloat(c.dataset.saldo) || 0;
+            }
+        });
+        return total;
+    }
+
+    function actualizarTotalYAutocompletar(force = false) {
+        const total = calcularTotalSeleccionado();
+
+        // Actualizar el "Total seleccionado" del pie de la tabla
+        totalSpan.textContent = total.toFixed(2);
+
+        // 🔽 Autocompletar el monto si el usuario no lo editó o si force=true
+        if (force || !montoEditadoManualmente) {
+            montoInput.value = total.toFixed(2);
+        }
+    }
+
+    // Al cambiar cualquier checkbox → recalcular
+    checkboxes.forEach(c => {
+        c.addEventListener('change', function () {
+            actualizarTotalYAutocompletar();
+        });
+    });
+
+    // Botón "Todos"
+    document.getElementById('btn_sel_todos').addEventListener('click', function () {
+        checkboxes.forEach(c => c.checked = true);
+        montoEditadoManualmente = false;
+        actualizarTotalYAutocompletar(true);
+    });
+
+    // Botón "Ninguno"
+    document.getElementById('btn_sel_ninguno').addEventListener('click', function () {
+        checkboxes.forEach(c => c.checked = false);
+        montoEditadoManualmente = false;
+        actualizarTotalYAutocompletar(true);
+    });
+
+    // Botones de montos rápidos
+    document.querySelectorAll('.btn-monto-rapido').forEach(btn => {
+        btn.addEventListener('click', function () {
+            const monto = this.dataset.monto;
+            if (monto === 'sel') {
+                montoEditadoManualmente = false;
+                actualizarTotalYAutocompletar(true);
+            } else {
+                montoInput.value = monto;
+                montoEditadoManualmente = true;
+            }
+        });
+    });
+
+    // Inicializar
+    actualizarTotalYAutocompletar(true);
+});
+</script>
+{% endblock %}

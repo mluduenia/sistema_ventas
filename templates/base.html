@@ -17,7 +17,6 @@
     <link rel="stylesheet" href="/static/css/custom.css">
 
     <style>
-        /* Ajuste de maquetación para Sidebar Fijo en Escritorio */
         @media (min-width: 768px) {
             .main-wrapper {
                 margin-left: 240px !important;
@@ -54,21 +53,28 @@
             <!-- NAVEGACIÓN ESCRITORIO -->
             <nav class="nav nav-pills flex-column gap-1 overflow-y-auto pe-1 flex-grow-1">
 
-                <!-- 1. DASHBOARD (PUBLICO PARA TODOS LOS USUARIOS AUTENTICADOS) -->
+                <!-- 1. DASHBOARD -->
                 {% if request.user.is_authenticated %}
                 <a href="{% url 'core:dashboard' %}" class="nav-link text-white-50 d-flex align-items-center gap-2 py-2 px-3 rounded {% if request.resolver_match.url_name == 'dashboard' %}active text-white{% endif %}">
                     <i class="fas fa-chart-line w-20"></i> Dashboard
                 </a>
                 {% endif %}
 
-                <!-- 2. SUBMENÚ VENTAS (Cajero, Supervisor, Gerente, Admin - EXCLUYE Almacenista) -->
-                {% if not 'Almacenista' in request.user.groups.all|join:',' %}
+                <!-- 2. MIS PEDIDOS (solo repartidor) -->
+                {% if request.user.rol == 'repartidor' %}
+                <a href="{% url 'ventas:mis_pedidos' %}" class="nav-link text-white-50 d-flex align-items-center gap-2 py-2 px-3 rounded {% if request.resolver_match.url_name == 'mis_pedidos' %}active text-white{% endif %}">
+                    <i class="fas fa-shipping-fast text-warning w-20"></i> Mis Pedidos
+                </a>
+                {% endif %}
+
+                <!-- 3. SUBMENÚ VENTAS -->
+                {% if request.user.rol != 'repartidor' %}
                 <div class="nav-item">
                     <a class="nav-link text-white-50 d-flex align-items-center justify-content-between py-2 px-3 rounded" data-bs-toggle="collapse" href="#submenuVentas" role="button" aria-expanded="false">
                         <span class="d-flex align-items-center gap-2"><i class="fas fa-shopping-cart w-20"></i> Ventas</span>
                         <i class="fas fa-chevron-down small"></i>
                     </a>
-                    <div class="collapse {% if 'ventas' in request.path and 'reportes' not in request.path %}show{% endif %}" id="submenuVentas">
+                    <div class="collapse {% if 'ventas' in request.path and 'reportes' not in request.path and 'mis-pedidos' not in request.path and 'repartidores' not in request.path %}show{% endif %}" id="submenuVentas">
                         <nav class="nav nav-pills flex-column ps-3 gap-1 mt-1">
                             <a href="{% url 'ventas:pos' %}" class="nav-link text-white-50 py-1 px-3 rounded small {% if request.resolver_match.url_name == 'pos' %}active text-white{% endif %}">
                                 <i class="fas fa-cash-register me-2"></i> Punto de Venta
@@ -76,12 +82,23 @@
                             <a href="{% url 'ventas:lista_ventas' %}" class="nav-link text-white-50 py-1 px-3 rounded small {% if request.resolver_match.url_name == 'lista_ventas' %}active text-white{% endif %}">
                                 <i class="fas fa-list-alt me-2"></i> Consultar Historial
                             </a>
+                            <a href="{% url 'ventas:remitos_pendientes' %}" class="nav-link text-white-50 py-1 px-3 rounded small {% if request.resolver_match.url_name == 'remitos_pendientes' %}active text-white{% endif %}">
+                                <i class="fas fa-file-invoice me-2 text-warning"></i> Remitos Pendientes
+                            </a>
+                            <a href="{% url 'ventas:cuentas_corrientes' %}" class="nav-link text-white-50 py-1 px-3 rounded small {% if request.resolver_match.url_name == 'cuentas_corrientes' %}active text-white{% endif %}">
+                                <i class="fas fa-hand-holding-usd me-2 text-info"></i> Cuentas Corrientes
+                            </a>
+                            <hr class="my-1 border-secondary opacity-25">
+                            <a href="{% url 'ventas:cerrar_caja' %}" class="nav-link text-warning py-1 px-3 rounded small {% if request.resolver_match.url_name == 'cerrar_caja' %}active text-white{% endif %}">
+                                <i class="fas fa-calculator me-2"></i> Arqueo / Cerrar Turno
+                            </a>
                         </nav>
                     </div>
                 </div>
                 {% endif %}
 
-                <!-- 3. SUBMENÚ STOCK / PRODUCTOS -->
+                <!-- 4. SUBMENÚ STOCK / PRODUCTOS -->
+                {% if request.user.rol != 'repartidor' %}
                 <div class="nav-item">
                     <a class="nav-link text-white-50 d-flex align-items-center justify-content-between py-2 px-3 rounded" data-bs-toggle="collapse" href="#submenuStock" role="button" aria-expanded="false">
                         <span class="d-flex align-items-center gap-2"><i class="fas fa-boxes w-20"></i> Stock / Productos</span>
@@ -89,7 +106,6 @@
                     </a>
                     <div class="collapse {% if 'productos' in request.path or 'stock' in request.path %}show{% endif %}" id="submenuStock">
                         <nav class="nav nav-pills flex-column ps-3 gap-1 mt-1">
-                            <!-- Productos y Movimientos (Visibles para Todos) -->
                             <a href="{% url 'productos:lista_productos' %}" class="nav-link text-white-50 py-1 px-3 rounded small {% if request.resolver_match.url_name == 'lista_productos' %}active text-white{% endif %}">
                                 <i class="fas fa-box me-2"></i> Productos / Existencias
                             </a>
@@ -97,8 +113,7 @@
                                 <i class="fas fa-exchange-alt me-2"></i> Movimientos de Stock
                             </a>
 
-                            <!-- Rubros y Proveedores (Solo para Supervisor, Gerente, Admin) -->
-                            {% if request.user.is_superuser or 'Administrador' in request.user.groups.all|join:',' or 'Gerente' in request.user.groups.all|join:',' or 'Supervisor' in request.user.groups.all|join:',' %}
+                            {% if request.user.is_superuser or request.user.rol == 'vendedor' or request.user.rol == 'gerente' or request.user.rol == 'cajero' %}
                             <a href="{% url 'productos:lista_categorias' %}" class="nav-link text-white-50 py-1 px-3 rounded small {% if 'categorias' in request.path %}active text-white{% endif %}">
                                 <i class="fas fa-tags me-2"></i> Rubros / Categorías
                             </a>
@@ -109,25 +124,24 @@
                         </nav>
                     </div>
                 </div>
+                {% endif %}
 
-                <!-- 4. REPORTES Y ESTADÍSTICAS (Cajero, Supervisor, Gerente, Admin) -->
-                {% if not 'Almacenista' in request.user.groups.all|join:',' %}
+                <!-- 5. REPORTES -->
+                {% if request.user.rol != 'repartidor' %}
                 <a href="{% url 'ventas:reportes' %}" class="nav-link text-white-50 d-flex align-items-center gap-2 py-2 px-3 rounded {% if request.resolver_match.url_name == 'reportes' %}active text-white{% endif %}">
                     <i class="fas fa-chart-bar w-20"></i> Reportes / Stats
                 </a>
                 {% endif %}
 
-                <!-- 5. CONFIGURACIÓN (EXCLUSIVO Administrador) -->
-                {% if request.user.is_superuser or 'Administrador' in request.user.groups.all|join:',' %}
+                <!-- 6. CONFIGURACIÓN -->
+                {% if request.user.is_superuser or request.user.rol == 'vendedor' or request.user.rol == 'gerente' %}
                 <a href="{% url 'configuracion:configuracion_general' %}" class="nav-link text-white-50 d-flex align-items-center gap-2 py-2 px-3 rounded {% if 'configuracion' in request.path %}active text-white{% endif %}">
                     <i class="fas fa-cog w-20"></i> Configuración
                 </a>
-                {% endif %}
 
-                <!-- 6. ARQUEO DE CAJA (Cajero, Supervisor, Gerente, Admin) -->
-                {% if not 'Almacenista' in request.user.groups.all|join:',' %}
-                <a href="{% url 'ventas:cerrar_caja' %}" class="nav-link text-warning d-flex align-items-center gap-2 py-2 px-3 rounded mt-2">
-                    <i class="fas fa-calculator w-20"></i> Arqueo / Turno
+                <!-- 🔽 NUEVO: Repartidores (justo debajo de Configuración) -->
+                <a href="{% url 'ventas:lista_repartidores' %}" class="nav-link text-white-50 d-flex align-items-center gap-2 py-2 px-3 rounded {% if 'repartidores' in request.path %}active text-white{% endif %}">
+                    <i class="fas fa-motorcycle w-20"></i> Repartidores
                 </a>
                 {% endif %}
 
@@ -137,7 +151,10 @@
         <!-- USUARIO & LOGOUT -->
         <div class="border-top border-secondary pt-3 flex-shrink-0 mt-auto">
             <div class="d-flex align-items-center justify-content-between px-2">
-                <span class="small text-white-50 text-truncate me-2"><i class="fas fa-user me-1"></i> {{ request.user.username }}</span>
+                <span class="small text-white-50 text-truncate me-2">
+                    <i class="fas fa-user me-1"></i> {{ request.user.username }}
+                    <span class="badge bg-secondary ms-1" style="font-size: 9px;">{{ request.user.rol|upper }}</span>
+                </span>
                 <a href="{% url 'usuarios:logout' %}" class="text-danger small fw-semibold text-decoration-none" title="Cerrar Sesión">
                     <i class="fas fa-sign-out-alt"></i> Salir
                 </a>
@@ -154,7 +171,6 @@
                     <button class="btn btn-sm btn-outline-secondary d-md-none" type="button" data-bs-toggle="offcanvas" data-bs-target="#mobileMenu">
                         <i class="fas fa-bars"></i>
                     </button>
-                    <!-- LOGO MÓVIL -->
                     <div class="d-flex align-items-center d-md-none">
                         {% if configuracion and configuracion.logo %}
                             <img src="{{ configuracion.logo.url }}" alt="Logo" class="me-2 rounded" style="max-height: 28px; object-fit: contain;">
@@ -217,31 +233,34 @@
                 {% if request.user.is_authenticated %}
                 <a href="{% url 'core:dashboard' %}" class="nav-link text-body py-2"><i class="fas fa-chart-line me-2 text-primary"></i> Dashboard</a>
                 {% endif %}
-                
-                {% if not 'Almacenista' in request.user.groups.all|join:',' %}
-                <a href="{% url 'ventas:pos' %}" class="nav-link text-body py-2"><i class="fas fa-cash-register me-2 text-primary"></i> Punto de Venta</a>
-                <a href="{% url 'ventas:lista_ventas' %}" class="nav-link text-body py-2"><i class="fas fa-list-alt me-2 text-primary"></i> Historial de Ventas</a>
+
+                {% if request.user.rol == 'repartidor' %}
+                <a href="{% url 'ventas:mis_pedidos' %}" class="nav-link text-body py-2"><i class="fas fa-shipping-fast me-2 text-warning"></i> Mis Pedidos</a>
                 {% endif %}
                 
-                <!-- Stock Móvil -->
+                {% if request.user.rol != 'repartidor' %}
+                <a href="{% url 'ventas:pos' %}" class="nav-link text-body py-2"><i class="fas fa-cash-register me-2 text-primary"></i> Punto de Venta</a>
+                <a href="{% url 'ventas:lista_ventas' %}" class="nav-link text-body py-2"><i class="fas fa-list-alt me-2 text-primary"></i> Historial de Ventas</a>
+                <a href="{% url 'ventas:remitos_pendientes' %}" class="nav-link text-body py-2"><i class="fas fa-file-invoice me-2 text-warning"></i> Remitos Pendientes</a>
+                <a href="{% url 'ventas:cuentas_corrientes' %}" class="nav-link text-body py-2"><i class="fas fa-hand-holding-usd me-2 text-info"></i> Cuentas Corrientes</a>
+                <hr class="my-1 border-secondary opacity-25">
+                <a href="{% url 'ventas:cerrar_caja' %}" class="nav-link text-warning py-2"><i class="fas fa-calculator me-2"></i> Arqueo / Cerrar Turno</a>
+                
                 <a href="{% url 'productos:lista_productos' %}" class="nav-link text-body py-2"><i class="fas fa-boxes me-2 text-primary"></i> Productos / Stock</a>
                 <a href="{% url 'productos:movimientos_stock' %}" class="nav-link text-body py-2"><i class="fas fa-exchange-alt me-2 text-primary"></i> Movimientos de Stock</a>
                 
-                {% if request.user.is_superuser or 'Administrador' in request.user.groups.all|join:',' or 'Gerente' in request.user.groups.all|join:',' or 'Supervisor' in request.user.groups.all|join:',' %}
+                {% if request.user.is_superuser or request.user.rol == 'vendedor' or request.user.rol == 'gerente' or request.user.rol == 'cajero' %}
                 <a href="{% url 'productos:lista_categorias' %}" class="nav-link text-body py-2"><i class="fas fa-tags me-2 text-primary"></i> Rubros</a>
                 <a href="{% url 'productos:lista_proveedores' %}" class="nav-link text-body py-2"><i class="fas fa-truck me-2 text-primary"></i> Proveedores</a>
                 {% endif %}
                 
-                {% if not 'Almacenista' in request.user.groups.all|join:',' %}
                 <a href="{% url 'ventas:reportes' %}" class="nav-link text-body py-2"><i class="fas fa-chart-bar me-2 text-primary"></i> Reportes y Estadísticas</a>
                 {% endif %}
                 
-                {% if request.user.is_superuser or 'Administrador' in request.user.groups.all|join:',' %}
+                {% if request.user.is_superuser or request.user.rol == 'vendedor' or request.user.rol == 'gerente' %}
                 <a href="{% url 'configuracion:configuracion_general' %}" class="nav-link text-body py-2"><i class="fas fa-cog me-2 text-primary"></i> Configuración</a>
-                {% endif %}
-                
-                {% if not 'Almacenista' in request.user.groups.all|join:',' %}
-                <a href="{% url 'ventas:cerrar_caja' %}" class="nav-link text-warning py-2"><i class="fas fa-calculator me-2"></i> Arqueo / Cerrar Turno</a>
+                <!-- 🔽 NUEVO: Repartidores en móvil -->
+                <a href="{% url 'ventas:lista_repartidores' %}" class="nav-link text-body py-2"><i class="fas fa-motorcycle me-2 text-warning"></i> Repartidores</a>
                 {% endif %}
             </nav>
         </div>
@@ -249,7 +268,10 @@
 
     <div class="p-3 border-top bg-body-tertiary">
         <div class="d-flex align-items-center justify-content-between">
-            <span class="small text-secondary fw-semibold"><i class="fas fa-user me-1"></i> {{ request.user.username }}</span>
+            <span class="small text-secondary fw-semibold">
+                <i class="fas fa-user me-1"></i> {{ request.user.username }}
+                <span class="badge bg-secondary ms-1" style="font-size: 9px;">{{ request.user.rol|upper }}</span>
+            </span>
             <a href="{% url 'usuarios:logout' %}" class="btn btn-sm btn-danger fw-bold">
                 <i class="fas fa-sign-out-alt me-1"></i> Salir
             </a>
@@ -283,12 +305,9 @@
         }
     }
 
-    // LÓGICA GLOBAL: SELECCIONAR TODO EL TEXTO EN INPUTS NUMÉRICOS AL HACER CLIC / FOCUS
     document.addEventListener('focusin', function (e) {
         if (e.target && (e.target.type === 'number' || e.target.classList.contains('input-cant') || e.target.classList.contains('input-num'))) {
-            setTimeout(() => {
-                e.target.select();
-            }, 50);
+            setTimeout(() => { e.target.select(); }, 50);
         }
     });
 

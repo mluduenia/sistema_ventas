@@ -18,7 +18,7 @@
                 <div class="card-body p-4">
                     <form method="POST" action="{% url 'ventas:crear_cliente' %}">
                         {% csrf_token %}
-                        
+
                         <!-- Razón Social o Nombre Completo -->
                         <div class="mb-3">
                             <label for="nombre" class="form-label fw-bold small">Razón Social / Nombre Completo <span class="text-danger">*</span></label>
@@ -26,10 +26,16 @@
                         </div>
 
                         <div class="row g-3 mb-3">
-                            <!-- Tipo de Documento / CUIT / DNI -->
+                            <!-- CUIT / DNI con botón ARCA -->
                             <div class="col-12 col-sm-6">
                                 <label for="cuit_dni" class="form-label fw-bold small">CUIT / DNI <span class="text-danger">*</span></label>
-                                <input type="text" class="form-control" id="cuit_dni" name="cuit_dni" placeholder="Sin guiones ni puntos" required>
+                                <div class="input-group">
+                                    <input type="text" class="form-control" id="cuit_dni" name="cuit_dni" placeholder="Sin guiones ni puntos" required>
+                                    <button type="button" class="btn btn-outline-primary" id="btn-consultar-padron" title="Consultar datos en ARCA">
+                                        <i class="fas fa-cloud-download-alt"></i> ARCA
+                                    </button>
+                                </div>
+                                <small id="padron-status" class="d-block mt-1"></small>
                             </div>
 
                             <!-- Condición de IVA -->
@@ -77,4 +83,114 @@
         </div>
     </div>
 </div>
+
+<!-- 🔽 SCRIPT DE AUTORRELLENO POR CUIT (ARCA) -->
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const btn = document.getElementById('btn-consultar-padron');
+    const statusEl = document.getElementById('padron-status');
+    const inputCuit = document.getElementById('cuit_dni');
+
+    if (!btn || !inputCuit) return;
+
+    // Formateo automático del CUIT mientras se escribe: 20-12345678-9
+    inputCuit.addEventListener('input', function (e) {
+        // Al escribir, quitar el estado inválido
+        inputCuit.classList.remove('is-invalid');
+
+        let v = e.target.value.replace(/\D/g, '').slice(0, 11);
+        if (v.length > 10) {
+            v = v.replace(/^(\d{2})(\d{8})(\d+)/, '$1-$2-$3');
+        } else if (v.length > 2) {
+            v = v.replace(/^(\d{2})(\d+)/, '$1-$2');
+        }
+        e.target.value = v;
+    });
+
+    btn.addEventListener('click', function () {
+        const cuit = inputCuit.value.replace(/\D/g, '');
+
+        // Validación local
+        if (cuit.length !== 11) {
+            inputCuit.classList.add('is-invalid');
+            statusEl.className = 'text-danger d-block mt-1';
+            statusEl.innerHTML = '<i class="fas fa-exclamation-circle"></i> Ingresá un CUIT de 11 dígitos.';
+            return;
+        }
+
+        // UI: estado de carga
+        inputCuit.classList.remove('is-invalid');
+        statusEl.className = 'text-muted d-block mt-1';
+        statusEl.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Consultando ARCA...';
+        btn.disabled = true;
+
+        fetch(`{% url 'ventas:consultar_padron' %}?cuit=${cuit}`)
+            .then(r => r.json())
+            .then(res => {
+                // ---- CASO ERROR ----
+                if (!res.success) {
+                    inputCuit.classList.add('is-invalid');
+                    const msg = res.error || 'No se pudo obtener datos.';
+
+                    // Distinguir por tipo de error
+                    if (res.tipo === 'no_encontrado' || res.tipo === 'sin_datos') {
+                        // Alert informativo, pero dejamos cargar manualmente
+                        alert('⚠️ CUIT no encontrado\n\n' + msg);
+                    } else if (res.tipo === 'autenticacion' || res.tipo === 'configuracion') {
+                        alert('🔧 Error de configuración\n\n' + msg);
+                    } else if (res.tipo === 'conexion' || res.tipo === 'soap') {
+                        alert('📡 Error de conexión con ARCA\n\n' + msg);
+                    } else {
+                        alert('❌ Error\n\n' + msg);
+                    }
+
+                    statusEl.className = 'text-danger d-block mt-1';
+                    statusEl.innerHTML = '<i class="fas fa-exclamation-circle"></i> ' + msg;
+                    return;
+                }
+
+                // ---- CASO ÉXITO ----
+                const d = res.data;
+                inputCuit.classList.remove('is-invalid');
+
+                // Rellenar campos de texto
+                const setVal = (id, val) => {
+                    const el = document.getElementById(id);
+                    if (el && val) el.value = val;
+                };
+                setVal('nombre', d.nombre);
+                setVal('direccion', d.direccion);
+
+                // Rellenar el select de condición IVA
+                const selectIva = document.getElementById('condicion_iva');
+                if (selectIva && d.condicion_iva) {
+                    let opt = Array.from(selectIva.options).find(o => o.value === d.condicion_iva);
+                    if (!opt) {
+                        // Fallback: buscar por coincidencia parcial
+                        const upper = String(d.condicion_iva).toUpperCase();
+                        opt = Array.from(selectIva.options).find(o =>
+                            o.text.toUpperCase().includes(upper) ||
+                            upper.includes(o.text.toUpperCase().trim())
+                        );
+                    }
+                    if (opt) selectIva.value = opt.value;
+                }
+
+                // Confirmación visual
+                statusEl.className = 'text-success d-block mt-1';
+                statusEl.innerHTML = '<i class="fas fa-check-circle"></i> Datos cargados desde ARCA.';
+            })
+            .catch(err => {
+                // Error de red / servidor caído / JSON inválido
+                inputCuit.classList.add('is-invalid');
+                statusEl.className = 'text-danger d-block mt-1';
+                statusEl.innerHTML = '<i class="fas fa-exclamation-circle"></i> Error de conexión con el servidor.';
+                alert('📡 No se pudo conectar con el servidor.\n\nVerificá tu conexión o intentá de nuevo.');
+            })
+            .finally(() => {
+                btn.disabled = false;
+            });
+    });
+});
+</script>
 {% endblock %}

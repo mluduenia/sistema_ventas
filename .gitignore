@@ -1,58 +1,52 @@
+# Entorno virtual
+env/
+venv/
+.venv/
+
 # Python
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
+build/
+dist/
+*.egg-info/
 
 # Django
-*.log
-*.pot
-*.pyc
-local_settings.py
 db.sqlite3
 db.sqlite3-journal
-media/
-staticfiles/
-.DS_Store
+*.log
+local_settings.py
 
-# Base de datos
-*.db
-*.sqlite3
+# Certificados (¡NUNCA subir!)
+server.key
+server.crt
+*.pem
+*.key
+certificados/
 
-# Archivos de entorno
-.env
-.env.local
-.env.production
+# Caches de ARCA
+afip_cache/
+wsdl_cache/
+wsfe.wsdl
+personaServiceA5.wsdl
+
+# Archivos temporales
+*.bak
+*.tmp
+*.old
+notas.txt
 
 # IDE
 .vscode/
 .idea/
 *.swp
 *.swo
-*~
-.~*
 
-# Archivos de sistema
+# Sistema operativo
+.DS_Store
 Thumbs.db
-ehthumbs.db
-Desktop.ini
 
-# Archivos de backup
-*.bak
-*.backup
-*.tmp
-*.temp
-
-# Archivos de log
-logs/
-*.log
-
-# Archivos de migraciones (opcional, solo si quieres excluirlas)
-# */migrations/*.py
-# !*/migrations/__init__.py
+# Media (archivos subidos por usuarios)
+media/

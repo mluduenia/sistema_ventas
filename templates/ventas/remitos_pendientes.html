@@ -1,0 +1,485 @@
+{% extends 'base.html' %}
+
+{% block title %}Remitos Pendientes{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3">
+
+    <!-- ENCABEZADO -->
+    <div class="card border-0 shadow-sm mb-3">
+        <div class="card-body">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h4 class="fw-bold m-0">
+                    <i class="fas fa-file-invoice text-warning me-2"></i> Remitos Pendientes
+                </h4>
+                <a href="{% url 'ventas:pos' %}" class="btn btn-success fw-bold">
+                    <i class="fas fa-plus-circle me-1"></i> Nuevo Remito (POS)
+                </a>
+            </div>
+
+            <!-- KPIs -->
+            <div class="row g-2 mb-3">
+                <div class="col-md-4">
+                    <div class="p-2 bg-body-tertiary rounded d-flex justify-content-between align-items-center">
+                        <span class="small text-secondary">Remitos Pendientes</span>
+                        <span class="fw-bold fs-5">{{ cantidad }}</span>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="p-2 bg-body-tertiary rounded d-flex justify-content-between align-items-center">
+                        <span class="small text-secondary">Total sin Cobrar</span>
+                        <span class="fw-bold fs-5 text-success">${{ total_general|floatformat:2 }}</span>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="p-2 bg-body-tertiary rounded d-flex justify-content-between align-items-center">
+                        <span class="small text-secondary">Clientes Involucrados</span>
+                        <span class="fw-bold fs-5">{{ clientes_con_remitos.count }}</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- FILTROS -->
+            <form method="GET" class="row g-2">
+                <div class="col-md-3">
+                    <select name="cliente" class="form-select form-select-sm">
+                        <option value="">-- Todos los clientes --</option>
+                        {% for c in clientes_con_remitos %}
+                            <option value="{{ c.id }}" {% if cliente_id == c.id|stringformat:"s" %}selected{% endif %}>
+                                {{ c.nombre }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <input type="date" name="fecha_desde" class="form-control form-control-sm"
+                           value="{{ fecha_desde }}" title="Fecha desde">
+                </div>
+                <div class="col-md-2">
+                    <input type="date" name="fecha_hasta" class="form-control form-control-sm"
+                           value="{{ fecha_hasta }}" title="Fecha hasta">
+                </div>
+                <div class="col-md-2 d-flex align-items-center">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" name="solo_vencidos"
+                               value="1" id="chk_vencidos" {% if solo_vencidos %}checked{% endif %}>
+                        <label class="form-check-label small" for="chk_vencidos">
+                            Solo vencidos (+7 días)
+                        </label>
+                    </div>
+                </div>
+                <div class="col-md-3 d-flex gap-1">
+                    <button type="submit" class="btn btn-sm btn-primary flex-grow-1">
+                        <i class="fas fa-search me-1"></i> Filtrar
+                    </button>
+                    <a href="{% url 'ventas:remitos_pendientes' %}" class="btn btn-sm btn-outline-secondary">
+                        <i class="fas fa-undo"></i>
+                    </a>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- TABLA -->
+    <div class="card border-0 shadow-sm">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th style="width: 40px;" class="text-center">
+                                <input type="checkbox" id="chk_todos" class="form-check-input">
+                            </th>
+                            <th>N° Remito</th>
+                            <th>Fecha</th>
+                            <th>Cliente</th>
+                            <th>Vendedor</th>
+                            <th class="text-end">Total</th>
+                            <th class="text-center">Días</th>
+                            <th class="text-center">Entrega</th>
+                            <th class="text-center">Cobro</th>
+                            <th class="text-center">Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for r in page_obj %}
+                        <tr {% if r.dias_desde_emision > 7 %}class="table-warning"{% endif %}>
+                            <td class="text-center">
+                                <input type="checkbox" class="form-check-input chk-remito"
+                                       value="{{ r.id }}"
+                                       data-cliente="{{ r.cliente.id|default:'' }}"
+                                       data-cliente-nombre="{{ r.cliente.nombre|default:'Consumidor Final' }}">
+                            </td>
+                            <td class="fw-bold text-warning">#{{ r.id }}</td>
+                            <td class="small">{{ r.fecha|date:"d/m/Y H:i" }}</td>
+                            <td>
+                                {% if r.cliente %}
+                                    {{ r.cliente.nombre }}
+                                {% else %}
+                                    <span class="text-muted">Consumidor Final</span>
+                                {% endif %}
+                            </td>
+                            <td class="small">{{ r.vendedor.username|default:"-" }}</td>
+                            <td class="text-end fw-bold text-success">${{ r.total|floatformat:2 }}</td>
+                            <td class="text-center">
+                                {% if r.dias_desde_emision > 7 %}
+                                    <span class="badge bg-danger">{{ r.dias_desde_emision }} días</span>
+                                {% elif r.dias_desde_emision > 3 %}
+                                    <span class="badge bg-warning text-dark">{{ r.dias_desde_emision }} días</span>
+                                {% else %}
+                                    <span class="badge bg-secondary">{{ r.dias_desde_emision }} días</span>
+                                {% endif %}
+                            </td>
+
+                            <!-- ENTREGA -->
+                            <td class="text-center">
+                                {% if r.estado == 'PENDIENTE_ENTREGA' %}
+                                    <span class="badge bg-warning text-dark">
+                                        <i class="fas fa-truck me-1"></i> Pendiente
+                                    </span>
+                                {% elif r.estado == 'ENTREGADO' or r.estado == 'COMPLETADO' %}
+                                    <span class="badge bg-success">
+                                        <i class="fas fa-check-circle me-1"></i> Entregado
+                                    </span>
+                                {% elif r.estado == 'POSPUESTO' %}
+                                    <span class="badge bg-danger">
+                                        <i class="fas fa-clock me-1"></i> Pospuesto
+                                    </span>
+                                {% else %}
+                                    <span class="badge bg-secondary">{{ r.get_estado_display }}</span>
+                                {% endif %}
+                            </td>
+
+                            <!-- COBRO -->
+                            <td class="text-center">
+                                {% if r.estado_cobro == 'PENDIENTE' %}
+                                    <span class="badge bg-danger">
+                                        <i class="fas fa-times-circle me-1"></i> Pendiente
+                                    </span>
+                                {% elif r.estado_cobro == 'PARCIAL' %}
+                                    <span class="badge bg-warning text-dark">
+                                        <i class="fas fa-adjust me-1"></i> Parcial
+                                    </span>
+                                {% elif r.estado_cobro == 'COBRADO' %}
+                                    <span class="badge bg-success">
+                                        <i class="fas fa-check-circle me-1"></i> Cobrado
+                                    </span>
+                                {% else %}
+                                    <span class="badge bg-secondary">{{ r.get_estado_cobro_display }}</span>
+                                {% endif %}
+                            </td>
+
+                            <!-- ACCIONES -->
+                            <td class="text-center">
+                                <div class="btn-group btn-group-sm">
+                                    <a href="{% url 'ventas:comprobante_factura' r.id %}" target="_blank"
+                                       class="btn btn-outline-secondary" title="Ver Remito">
+                                        <i class="fas fa-eye"></i>
+                                    </a>
+
+                                    {% if r.estado == 'PENDIENTE_ENTREGA' %}
+                                    <button class="btn btn-outline-warning btn-marcar-entregado"
+                                            data-remito-id="{{ r.id }}"
+                                            title="Marcar como Entregado">
+                                        <i class="fas fa-check"></i>
+                                    </button>
+                                    {% endif %}
+
+                                    {% if r.saldo_pendiente > 0 and r.cliente %}
+                                    <a href="{% url 'ventas:registrar_pago' r.cliente.id %}?factura={{ r.id }}"
+                                       class="btn btn-outline-success" title="Registrar Pago">
+                                        <i class="fas fa-money-bill-wave"></i>
+                                    </a>
+                                    {% endif %}
+
+                                    <button class="btn btn-outline-primary btn-facturar-individual"
+                                            data-remito-id="{{ r.id }}"
+                                            title="Facturar este remito">
+                                        <i class="fas fa-file-invoice-dollar"></i>
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="10" class="text-center py-5 text-muted">
+                                <i class="fas fa-check-circle fa-3x mb-3 d-block text-success opacity-50"></i>
+                                <strong>¡Todo cobrado!</strong>
+                                <p class="mb-0 small">No hay remitos pendientes con los filtros actuales.</p>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- BARRA DE ACCIONES MASIVAS -->
+        {% if page_obj.object_list %}
+        <div class="card-footer bg-body border-top d-flex justify-content-between align-items-center flex-wrap gap-2 py-2">
+            <div>
+                <span class="small text-muted me-2">
+                    <span id="contador_seleccionados">0</span> remito(s) seleccionado(s)
+                </span>
+                <span class="small text-muted">
+                    Total: <strong id="total_seleccionados" class="text-success">$0.00</strong>
+                </span>
+            </div>
+            <button type="button" class="btn btn-success fw-bold" id="btn_facturar_seleccionados" disabled>
+                <i class="fas fa-file-invoice-dollar me-1"></i> Facturar Seleccionados
+            </button>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- PAGINACIÓN -->
+    {% if page_obj.has_other_pages %}
+    <div class="d-flex justify-content-center mt-3">
+        <nav>
+            <ul class="pagination pagination-sm mb-0">
+                {% if page_obj.has_previous %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page=1{% for k, v in request.GET.items %}{% if k != 'page' and v %}&{{ k }}={{ v }}{% endif %}{% endfor %}">
+                            <i class="fas fa-angle-double-left"></i>
+                        </a>
+                    </li>
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ page_obj.previous_page_number }}{% for k, v in request.GET.items %}{% if k != 'page' and v %}&{{ k }}={{ v }}{% endif %}{% endfor %}">
+                            &laquo;
+                        </a>
+                    </li>
+                {% endif %}
+                <li class="page-item active">
+                    <span class="page-link">{{ page_obj.number }} / {{ page_obj.paginator.num_pages }}</span>
+                </li>
+                {% if page_obj.has_next %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ page_obj.next_page_number }}{% for k, v in request.GET.items %}{% if k != 'page' and v %}&{{ k }}={{ v }}{% endif %}{% endfor %}">
+                            &raquo;
+                        </a>
+                    </li>
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ page_obj.paginator.num_pages }}{% for k, v in request.GET.items %}{% if k != 'page' and v %}&{{ k }}={{ v }}{% endif %}{% endfor %}">
+                            <i class="fas fa-angle-double-right"></i>
+                        </a>
+                    </li>
+                {% endif %}
+            </ul>
+        </nav>
+    </div>
+    {% endif %}
+</div>
+
+<!-- SCRIPT PARA SELECCIÓN MÚLTIPLE + ACCIONES -->
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const chkTodos = document.getElementById('chk_todos');
+    const checkboxes = document.querySelectorAll('.chk-remito');
+    const contador = document.getElementById('contador_seleccionados');
+    const totalDisplay = document.getElementById('total_seleccionados');
+    const btnFacturar = document.getElementById('btn_facturar_seleccionados');
+
+    // Mapa de precios
+    const precios = {
+        {% for r in page_obj %}
+            {{ r.id }}: {{ r.total|floatformat:"2u" }},
+        {% endfor %}
+    };
+
+    function actualizarContador() {
+        const seleccionados = Array.from(checkboxes).filter(c => c.checked);
+        const total = seleccionados.reduce((sum, c) => sum + (precios[c.value] || 0), 0);
+        contador.textContent = seleccionados.length;
+        totalDisplay.textContent = '$' + total.toFixed(2);
+        btnFacturar.disabled = seleccionados.length === 0;
+    }
+
+    if (chkTodos) {
+        chkTodos.addEventListener('change', function () {
+            checkboxes.forEach(c => c.checked = chkTodos.checked);
+            actualizarContador();
+        });
+    }
+
+    checkboxes.forEach(c => {
+        c.addEventListener('change', function () {
+            if (!this.checked && chkTodos) chkTodos.checked = false;
+            actualizarContador();
+        });
+    });
+
+    // =========================================================
+    // FACTURAR SELECCIONADOS
+    // =========================================================
+    if (btnFacturar) {
+        btnFacturar.addEventListener('click', function () {
+            const seleccionados = Array.from(checkboxes).filter(c => c.checked);
+            if (seleccionados.length === 0) return;
+
+            const clientesUnicos = new Set(seleccionados.map(c => c.dataset.cliente));
+            if (clientesUnicos.size > 1) {
+                alert('⚠️ Todos los remitos seleccionados deben ser del MISMO cliente.');
+                return;
+            }
+
+            if (clientesUnicos.has('')) {
+                alert('⚠️ No se pueden facturar remitos sin cliente asignado. Asigná un cliente primero.');
+                return;
+            }
+
+            const ids = seleccionados.map(c => c.value);
+
+            const confirmar = confirm(
+                '¿Facturar ' + ids.length + ' remito(s)?\n\n' +
+                'Remitos: #' + ids.join(', #')
+            );
+            if (!confirmar) return;
+
+            btnFacturar.disabled = true;
+            btnFacturar.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Facturando...';
+
+            fetch(`{% url 'ventas:obtener_detalles_remitos' %}?ids=${ids.join(',')}`)
+                .then(r => r.json())
+                .then(data => {
+                    if (!data.success) throw new Error(data.error || 'Error al traer los detalles.');
+
+                    return fetch('{% url "ventas:procesar_venta_ajax" %}', {
+                        method: 'POST',
+                        credentials: 'same-origin',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': '{{ csrf_token }}'
+                        },
+                        body: JSON.stringify({
+                            items: data.items,
+                            cliente_id: data.cliente_id,
+                            vendedor_id: data.vendedor_id,
+                            metodo_pago: data.metodo_pago || 'EFECTIVO',
+                            tipo_comprobante: data.tipo_comprobante,
+                            monto_recibido: 0,
+                            accion_comprobante: 'FACTURA',
+                            desde_remitos: true,
+                            remito_ids: ids,
+                        })
+                    });
+                })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        alert('✅ Factura emitida correctamente.\n\nCAE: ' + (data.cae || 'pendiente'));
+                        location.reload();
+                    } else {
+                        alert('❌ Error: ' + (data.message || 'No se pudo facturar.'));
+                        btnFacturar.disabled = false;
+                        btnFacturar.innerHTML = '<i class="fas fa-file-invoice-dollar me-1"></i> Facturar Seleccionados';
+                    }
+                })
+                .catch(err => {
+                    console.error('Error:', err);
+                    alert('❌ Error: ' + err.message);
+                    btnFacturar.disabled = false;
+                    btnFacturar.innerHTML = '<i class="fas fa-file-invoice-dollar me-1"></i> Facturar Seleccionados';
+                });
+        });
+    }
+
+    // =========================================================
+    // FACTURAR INDIVIDUAL
+    // =========================================================
+    document.querySelectorAll('.btn-facturar-individual').forEach(btn => {
+        btn.addEventListener('click', function () {
+            const remitoId = this.dataset.remitoId;
+
+            const confirmar = confirm('¿Facturar el remito #' + remitoId + '?');
+            if (!confirmar) return;
+
+            this.disabled = true;
+            this.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+
+            fetch(`{% url 'ventas:obtener_detalles_remitos' %}?ids=${remitoId}`)
+                .then(r => r.json())
+                .then(data => {
+                    if (!data.success) throw new Error(data.error || 'Error al traer los detalles.');
+
+                    return fetch('{% url "ventas:procesar_venta_ajax" %}', {
+                        method: 'POST',
+                        credentials: 'same-origin',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': '{{ csrf_token }}'
+                        },
+                        body: JSON.stringify({
+                            items: data.items,
+                            cliente_id: data.cliente_id,
+                            vendedor_id: data.vendedor_id,
+                            metodo_pago: data.metodo_pago || 'EFECTIVO',
+                            tipo_comprobante: data.tipo_comprobante,
+                            monto_recibido: 0,
+                            accion_comprobante: 'FACTURA',
+                            desde_remitos: true,
+                            remito_ids: [remitoId],
+                        })
+                    });
+                })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        alert('✅ Factura emitida.\n\nCAE: ' + (data.cae || 'pendiente'));
+                        location.reload();
+                    } else {
+                        alert('❌ Error: ' + (data.message || 'No se pudo facturar.'));
+                        this.disabled = false;
+                        this.innerHTML = '<i class="fas fa-file-invoice-dollar"></i>';
+                    }
+                })
+                .catch(err => {
+                    console.error('Error:', err);
+                    alert('❌ Error: ' + err.message);
+                    this.disabled = false;
+                    this.innerHTML = '<i class="fas fa-file-invoice-dollar"></i>';
+                });
+        });
+    });
+
+    // =========================================================
+    // MARCAR COMO ENTREGADO (admin)
+    // =========================================================
+    document.querySelectorAll('.btn-marcar-entregado').forEach(btn => {
+        btn.addEventListener('click', function () {
+            const remitoId = this.dataset.remitoId;
+
+            const confirmar = confirm('¿Marcar el remito #' + remitoId + ' como ENTREGADO?');
+            if (!confirmar) return;
+
+            this.disabled = true;
+            this.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+
+            fetch(`/ventas/marcar-entregado-admin/${remitoId}/`, {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {
+                    'X-CSRFToken': '{{ csrf_token }}'
+                }
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    alert('✅ Remito marcado como entregado.');
+                    location.reload();
+                } else {
+                    alert('❌ Error: ' + (data.message || 'No se pudo marcar.'));
+                    this.disabled = false;
+                    this.innerHTML = '<i class="fas fa-check"></i>';
+                }
+            })
+            .catch(err => {
+                console.error('Error:', err);
+                alert('❌ Error de conexión.');
+                this.disabled = false;
+                this.innerHTML = '<i class="fas fa-check"></i>';
+            });
+        });
+    });
+});
+</script>
+{% endblock %}

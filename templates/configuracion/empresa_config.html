@@ -3,243 +3,263 @@
 {% block title %}Configuración de Empresa{% endblock %}
 
 {% block content %}
-<div class="row justify-content-center mb-5">
-    <div class="col-12 col-xl-10">
-        <div class="card border-0 shadow-sm">
-            <div class="card-header bg-body border-bottom py-3 d-flex justify-content-between align-items-center">
-                <h4 class="fw-bold mb-0 text-primary">
-                    <i class="fas fa-building me-2"></i> Configuración de Empresa y Facturación
-                </h4>
-                {% if es_readonly %}
-                    <span class="badge bg-warning text-dark px-3 py-2 fs-6">
-                        <i class="fas fa-eye me-1"></i> Modo Solo Lectura
-                    </span>
-                {% endif %}
-            </div>
-            <div class="card-body p-4">
+<div class="container-fluid py-3">
+    <div class="row justify-content-center">
+        <div class="col-12 col-md-11 col-lg-9">
 
-                <!-- ALERTA MODO LECTURA PARA ADMINISTRADORES -->
-                {% if es_readonly %}
-                    <div class="alert alert-warning alert-dismissible fade show mb-4" role="alert">
-                        <i class="fas fa-lock me-2"></i>
-                        <strong>Atención:</strong> Tienes permisos de consulta. Solo el <strong>Superusuario</strong> puede modificar y guardar la configuración del sistema.
+            {% if messages %}
+                {% for message in messages %}
+                    <div class="alert alert-{{ message.tags|default:'info' }} alert-dismissible fade show" role="alert">
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
                     </div>
-                {% endif %}
+                {% endfor %}
+            {% endif %}
 
-                <!-- ALERTAS DE ERRORES GENERALES DEL FORMULARIO -->
-                {% if form.errors %}
-                    <div class="alert alert-danger alert-dismissible fade show" role="alert">
-                        <i class="fas fa-exclamation-triangle me-2"></i>
-                        <strong>Atención:</strong> Revisa los campos resaltados a continuación.
-                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            <form method="POST" enctype="multipart/form-data" id="form-config">
+                {% csrf_token %}
+
+                <!-- CARD: Entorno ARCA (destacado arriba) -->
+                <div class="card border-0 shadow-sm mb-3">
+                    <div class="card-header bg-body py-3 border-bottom d-flex justify-content-between align-items-center">
+                        <h5 class="fw-bold mb-0">
+                            <i class="fas fa-cloud me-2 text-primary"></i> Entorno de ARCA
+                        </h5>
+                        {% if modo_actual == 'PRODUCCION' %}
+                            <span class="badge bg-success fs-6">
+                                <i class="fas fa-check-circle me-1"></i> PRODUCCIÓN
+                            </span>
+                        {% else %}
+                            <span class="badge bg-warning text-dark fs-6">
+                                <i class="fas fa-flask me-1"></i> HOMOLOGACIÓN (PRUEBAS)
+                            </span>
+                        {% endif %}
                     </div>
-                {% endif %}
+                    <div class="card-body">
 
-                <form method="POST" enctype="multipart/form-data" id="form-configuracion">
-                    {% csrf_token %}
-
-                    <!-- SECCIÓN LOGO -->
-                    <div class="card mb-4 border">
-                        <div class="card-header bg-body-tertiary fw-bold">
-                            <i class="fas fa-image me-2 text-primary"></i> Logo de la Empresa
+                        <div class="mb-3">
+                            <label for="{{ form.ambiente_arca.id_for_label }}" class="form-label fw-bold small">
+                                {{ form.ambiente_arca.label }}
+                            </label>
+                            {{ form.ambiente_arca }}
+                            <small class="text-muted d-block mt-1">
+                                HOMOLOGACIÓN: solo para pruebas (CUITs ficticios como <code>33693450239</code>).<br>
+                                PRODUCCIÓN: uso real (requiere certificado de producción autorizado).
+                            </small>
                         </div>
-                        <div class="card-body text-center p-3">
-                            {% if config.logo %}
-                                <img src="{{ config.logo.url }}" alt="Logo Empresa" class="img-thumbnail shadow-sm mb-3" style="max-height: 120px; object-fit: contain;">
-                            {% else %}
-                                <div class="p-3 text-muted border rounded bg-body mb-3">
-                                    <i class="fas fa-store fa-3x opacity-25 d-block mb-1"></i>
-                                    Sin logo cargado actualmente.
-                                </div>
-                            {% endif %}
-                            
-                            <div class="col-12 col-md-6 mx-auto text-start">
-                                <label class="form-label fw-semibold small text-secondary">Subir / Cambiar Logo</label>
+
+                        {% if modo_actual == 'PRODUCCION' %}
+                            <div class="alert alert-success mb-0">
+                                <i class="fas fa-check-circle me-1"></i>
+                                <strong>Modo PRODUCCIÓN activo.</strong>
+                                Las consultas y facturas son reales y válidas ante ARCA.
+                            </div>
+                        {% else %}
+                            <div class="alert alert-warning mb-0">
+                                <i class="fas fa-exclamation-triangle me-1"></i>
+                                <strong>Modo PRUEBAS activo.</strong>
+                                Las consultas y facturas NO son válidas fiscalmente.
+                                Solo funciona con CUITs de prueba.
+                            </div>
+                        {% endif %}
+
+                    </div>
+                </div>
+
+                <!-- CARD: Datos de la Empresa -->
+                <div class="card border-0 shadow-sm mb-3">
+                    <div class="card-header bg-body py-3 border-bottom">
+                        <h5 class="fw-bold mb-0">
+                            <i class="fas fa-building me-2 text-primary"></i> Datos de la Empresa
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3">
+
+                            <!-- Logo -->
+                            <div class="col-md-12">
+                                <label for="{{ form.logo.id_for_label }}" class="form-label fw-bold small">{{ form.logo.label }}</label>
                                 {{ form.logo }}
-                                {% if form.logo.errors %}
-                                    <div class="text-danger small mt-1">{{ form.logo.errors|striptags }}</div>
+                                {% if config.logo %}
+                                    <div class="mt-2">
+                                        <img src="{{ config.logo.url }}" alt="Logo actual" style="max-height: 60px;">
+                                    </div>
                                 {% endif %}
                             </div>
+
+                            <div class="col-md-6">
+                                <label for="{{ form.razon_social.id_for_label }}" class="form-label fw-bold small">{{ form.razon_social.label }} <span class="text-danger">*</span></label>
+                                {{ form.razon_social }}
+                            </div>
+                            <div class="col-md-6">
+                                <label for="{{ form.nombre_fantasia.id_for_label }}" class="form-label fw-bold small">{{ form.nombre_fantasia.label }}</label>
+                                {{ form.nombre_fantasia }}
+                            </div>
+
+                            <div class="col-md-6">
+                                <label for="{{ form.cuit.id_for_label }}" class="form-label fw-bold small">{{ form.cuit.label }} <span class="text-danger">*</span></label>
+                                {{ form.cuit }}
+                            </div>
+                            <div class="col-md-6">
+                                <label for="{{ form.condicion_iva.id_for_label }}" class="form-label fw-bold small">{{ form.condicion_iva.label }}</label>
+                                {{ form.condicion_iva }}
+                            </div>
+
+                            <div class="col-md-6">
+                                <label for="{{ form.iibb.id_for_label }}" class="form-label fw-bold small">{{ form.iibb.label }}</label>
+                                {{ form.iibb }}
+                            </div>
+                            <div class="col-md-6">
+                                <label for="{{ form.inicio_actividades.id_for_label }}" class="form-label fw-bold small">{{ form.inicio_actividades.label }}</label>
+                                {{ form.inicio_actividades }}
+                            </div>
+
+                            <div class="col-md-8">
+                                <label for="{{ form.direccion.id_for_label }}" class="form-label fw-bold small">{{ form.direccion.label }}</label>
+                                {{ form.direccion }}
+                            </div>
+                            <div class="col-md-4">
+                                <label for="{{ form.telefono.id_for_label }}" class="form-label fw-bold small">{{ form.telefono.label }}</label>
+                                {{ form.telefono }}
+                            </div>
+
+                            <div class="col-md-12">
+                                <label for="{{ form.email.id_for_label }}" class="form-label fw-bold small">{{ form.email.label }}</label>
+                                {{ form.email }}
+                            </div>
+
                         </div>
                     </div>
+                </div>
 
-                    <!-- SECCIÓN DATOS COMERCIALES -->
-                    <div class="card mb-4 border">
-                        <div class="card-header bg-body-tertiary fw-bold">
-                            <i class="fas fa-id-card me-2 text-primary"></i> Datos Comerciales
+                <!-- CARD: Certificados ARCA -->
+                <div class="card border-0 shadow-sm mb-3">
+                    <div class="card-header bg-body py-3 border-bottom">
+                        <h5 class="fw-bold mb-0">
+                            <i class="fas fa-certificate me-2 text-primary"></i> Certificados ARCA y Punto de Venta
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3">
+
+                            <div class="col-md-4">
+                                <label for="{{ form.punto_de_venta.id_for_label }}" class="form-label fw-bold small">{{ form.punto_de_venta.label }}</label>
+                                {{ form.punto_de_venta }}
+                            </div>
+
+                            <div class="col-md-4">
+                                <label for="{{ form.certificado_crt.id_for_label }}" class="form-label fw-bold small">{{ form.certificado_crt.label }}</label>
+                                {{ form.certificado_crt }}
+                                {% if config.certificado_crt %}
+                                    <small class="text-muted d-block mt-1">
+                                        <i class="fas fa-check-circle text-success"></i> Certificado cargado
+                                    </small>
+                                {% endif %}
+                            </div>
+
+                            <div class="col-md-4">
+                                <label for="{{ form.clave_privada_key.id_for_label }}" class="form-label fw-bold small">{{ form.clave_privada_key.label }}</label>
+                                {{ form.clave_privada_key }}
+                                {% if config.clave_privada_key %}
+                                    <small class="text-muted d-block mt-1">
+                                        <i class="fas fa-check-circle text-success"></i> Clave cargada
+                                    </small>
+                                {% endif %}
+                            </div>
+
                         </div>
-                        <div class="card-body p-3">
-                            <div class="row g-3">
-                                <div class="col-12 col-md-6">
-                                    <label class="form-label fw-semibold">Razón Social *</label>
-                                    {{ form.razon_social }}
-                                    {% if form.razon_social.errors %}<div class="text-danger small mt-1">{{ form.razon_social.errors|striptags }}</div>{% endif %}
-                                </div>
+                    </div>
+                </div>
 
-                                <div class="col-12 col-md-6">
-                                    <label class="form-label fw-semibold">Nombre Fantasía</label>
-                                    {{ form.nombre_fantasia }}
-                                    {% if form.nombre_fantasia.errors %}<div class="text-danger small mt-1">{{ form.nombre_fantasia.errors|striptags }}</div>{% endif %}
-                                </div>
+                <!-- CARD: Email / SMTP -->
+                <div class="card border-0 shadow-sm mb-3">
+                    <div class="card-header bg-body py-3 border-bottom">
+                        <h5 class="fw-bold mb-0">
+                            <i class="fas fa-envelope me-2 text-primary"></i> Envío de Correos (SMTP)
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3">
 
-                                <div class="col-12 col-md-4">
-                                    <label class="form-label fw-semibold">CUIT *</label>
-                                    {{ form.cuit }}
-                                    {% if form.cuit.errors %}<div class="text-danger small mt-1">{{ form.cuit.errors|striptags }}</div>{% endif %}
-                                </div>
-
-                                <div class="col-12 col-md-4">
-                                    <label class="form-label fw-semibold">Condición IVA</label>
-                                    {{ form.condicion_iva }}
-                                    {% if form.condicion_iva.errors %}<div class="text-danger small mt-1">{{ form.condicion_iva.errors|striptags }}</div>{% endif %}
-                                </div>
-
-                                <div class="col-12 col-md-4">
-                                    <label class="form-label fw-semibold">Ingresos Brutos (IIBB)</label>
-                                    {{ form.iibb }}
-                                    {% if form.iibb.errors %}<div class="text-danger small mt-1">{{ form.iibb.errors|striptags }}</div>{% endif %}
-                                </div>
-
-                                <div class="col-12 col-md-4">
-                                    <label class="form-label fw-semibold">Inicio de Actividades</label>
-                                    {{ form.inicio_actividades }}
-                                    {% if form.inicio_actividades.errors %}<div class="text-danger small mt-1">{{ form.inicio_actividades.errors|striptags }}</div>{% endif %}
-                                </div>
-
-                                <div class="col-12 col-md-4">
-                                    <label class="form-label fw-semibold">Teléfono</label>
-                                    {{ form.telefono }}
-                                    {% if form.telefono.errors %}<div class="text-danger small mt-1">{{ form.telefono.errors|striptags }}</div>{% endif %}
-                                </div>
-
-                                <div class="col-12 col-md-4">
-                                    <label class="form-label fw-semibold">Email</label>
-                                    {{ form.email }}
-                                    {% if form.email.errors %}<div class="text-danger small mt-1">{{ form.email.errors|striptags }}</div>{% endif %}
-                                </div>
-
-                                <div class="col-12">
-                                    <label class="form-label fw-semibold">Dirección Comercial</label>
-                                    {{ form.direccion }}
-                                    {% if form.direccion.errors %}<div class="text-danger small mt-1">{{ form.direccion.errors|striptags }}</div>{% endif %}
+                            <div class="col-md-6">
+                                <label for="{{ form.email_smtp_host.id_for_label }}" class="form-label fw-bold small">{{ form.email_smtp_host.label }}</label>
+                                {{ form.email_smtp_host }}
+                            </div>
+                            <div class="col-md-3">
+                                <label for="{{ form.email_smtp_port.id_for_label }}" class="form-label fw-bold small">{{ form.email_smtp_port.label }}</label>
+                                {{ form.email_smtp_port }}
+                            </div>
+                            <div class="col-md-3 d-flex align-items-end">
+                                <div class="form-check form-switch">
+                                    {{ form.email_smtp_use_tls }}
+                                    <label class="form-check-label small" for="{{ form.email_smtp_use_tls.id_for_label }}">
+                                        {{ form.email_smtp_use_tls.label }}
+                                    </label>
                                 </div>
                             </div>
-                        </div>
-                    </div>
 
-                    <!-- SECCIÓN SERVIDOR DE CORREO SMTP -->
-                    <div class="card mb-4 border">
-                        <div class="card-header bg-body-tertiary fw-bold">
-                            <i class="fas fa-envelope me-2 text-primary"></i> Configuración de Servidor de Correo (SMTP)
-                        </div>
-                        <div class="card-body p-3">
-                            <div class="row g-3">
-                                <div class="col-12 col-md-8">
-                                    <label class="form-label fw-semibold">Host SMTP</label>
-                                    {{ form.email_smtp_host }}
-                                    {% if form.email_smtp_host.errors %}<div class="text-danger small mt-1">{{ form.email_smtp_host.errors|striptags }}</div>{% endif %}
-                                </div>
-
-                                <div class="col-12 col-md-4">
-                                    <label class="form-label fw-semibold">Puerto SMTP</label>
-                                    {{ form.email_smtp_port }}
-                                    {% if form.email_smtp_port.errors %}<div class="text-danger small mt-1">{{ form.email_smtp_port.errors|striptags }}</div>{% endif %}
-                                </div>
-
-                                <div class="col-12 col-md-6">
-                                    <label class="form-label fw-semibold">Usuario / Correo Emisor</label>
-                                    {{ form.email_smtp_user }}
-                                    {% if form.email_smtp_user.errors %}<div class="text-danger small mt-1">{{ form.email_smtp_user.errors|striptags }}</div>{% endif %}
-                                </div>
-
-                                <div class="col-12 col-md-6">
-                                    <label class="form-label fw-semibold">Contraseña de Aplicación</label>
-                                    {{ form.email_smtp_password }}
-                                    {% if form.email_smtp_password.errors %}<div class="text-danger small mt-1">{{ form.email_smtp_password.errors|striptags }}</div>{% endif %}
-                                </div>
-
-                                <div class="col-12">
-                                    <div class="form-check form-switch mt-2">
-                                        {{ form.email_smtp_use_tls }}
-                                        <label class="form-check-label fw-semibold" for="{{ form.email_smtp_use_tls.id_for_label }}">
-                                            Usar TLS / Seguridad en conexión
-                                        </label>
-                                    </div>
-                                    {% if form.email_smtp_use_tls.errors %}<div class="text-danger small mt-1">{{ form.email_smtp_use_tls.errors|striptags }}</div>{% endif %}
-                                </div>
+                            <div class="col-md-6">
+                                <label for="{{ form.email_smtp_user.id_for_label }}" class="form-label fw-bold small">{{ form.email_smtp_user.label }}</label>
+                                {{ form.email_smtp_user }}
                             </div>
-                        </div>
-                    </div>
-
-                    <!-- SECCIÓN FACTURACIÓN ELECTRONICA ARCA / AFIP -->
-                    <div class="card mb-4 border">
-                        <div class="card-header bg-body-tertiary fw-bold">
-                            <i class="fas fa-file-invoice-dollar me-2 text-primary"></i> Facturación Electrónica (ARCA / AFIP)
-                        </div>
-                        <div class="card-body p-3">
-                            <div class="row g-3">
-                                <div class="col-12 col-md-6">
-                                    <label class="form-label fw-semibold">N° Punto de Venta Habilitado</label>
-                                    {{ form.punto_de_venta }}
-                                    {% if form.punto_de_venta.errors %}<div class="text-danger small mt-1">{{ form.punto_de_venta.errors|striptags }}</div>{% endif %}
-                                </div>
-
-                                <div class="col-12 col-md-6">
-                                    <label class="form-label fw-semibold">Ambiente de Operación</label>
-                                    {{ form.ambiente_arca }}
-                                    {% if form.ambiente_arca.errors %}<div class="text-danger small mt-1">{{ form.ambiente_arca.errors|striptags }}</div>{% endif %}
-                                </div>
-
-                                <div class="col-12 col-md-6">
-                                    <label class="form-label fw-semibold">Certificado Digital (.crt)</label>
-                                    {% if config.certificado_crt %}
-                                        <div class="small text-success mb-1">
-                                            <i class="fas fa-check-circle"></i> Archivo asignado: <strong>{{ config.certificado_crt.name }}</strong>
-                                        </div>
-                                    {% endif %}
-                                    {{ form.certificado_crt }}
-                                    {% if form.certificado_crt.errors %}<div class="text-danger small mt-1">{{ form.certificado_crt.errors|striptags }}</div>{% endif %}
-                                </div>
-
-                                <div class="col-12 col-md-6">
-                                    <label class="form-label fw-semibold">Clave Privada (.key)</label>
-                                    {% if config.clave_privada_key %}
-                                        <div class="small text-success mb-1">
-                                            <i class="fas fa-check-circle"></i> Archivo asignado: <strong>{{ config.clave_privada_key.name }}</strong>
-                                        </div>
-                                    {% endif %}
-                                    {{ form.clave_privada_key }}
-                                    {% if form.clave_privada_key.errors %}<div class="text-danger small mt-1">{{ form.clave_privada_key.errors|striptags }}</div>{% endif %}
-                                </div>
+                            <div class="col-md-6">
+                                <label for="{{ form.email_smtp_password.id_for_label }}" class="form-label fw-bold small">{{ form.email_smtp_password.label }}</label>
+                                {{ form.email_smtp_password }}
                             </div>
+
                         </div>
                     </div>
+                </div>
 
-                    <!-- BOTÓN GUARDAR -->
-                    {% if not es_readonly %}
-                    <div class="text-end mt-4">
-                        <button type="submit" class="btn btn-primary btn-lg fw-bold px-5 shadow-sm">
-                            <i class="fas fa-save me-2"></i> Guardar Configuración
+                <!-- Botones -->
+                {% if not es_readonly %}
+                    <div class="d-flex justify-content-end gap-2 mb-4">
+                        <a href="{% url 'ventas:pos' %}" class="btn btn-secondary px-4">Cancelar</a>
+                        <button type="submit" class="btn btn-primary fw-bold px-4">
+                            <i class="fas fa-save me-1"></i> Guardar Cambios
                         </button>
                     </div>
-                    {% endif %}
-                </form>
-            </div>
+                {% else %}
+                    <div class="alert alert-info">
+                        <i class="fas fa-lock me-1"></i>
+                        Tenés permisos de solo lectura. Solo el Superusuario puede modificar esta configuración.
+                    </div>
+                {% endif %}
+
+            </form>
+
         </div>
     </div>
 </div>
 
-<!-- BLOQUE DE SCRIPT PARA BLOQUEO EN MODO SOLO LECTURA -->
-{% if es_readonly %}
+<!-- Confirmación al pasar de HOMOLOGACIÓN a PRODUCCIÓN -->
 <script>
-    document.addEventListener("DOMContentLoaded", function() {
-        const form = document.getElementById("form-configuracion");
-        if (form) {
-            form.querySelectorAll("input, select, textarea, button[type='submit']").forEach(el => {
-                el.disabled = true;
-            });
+document.addEventListener('DOMContentLoaded', function () {
+    const form = document.getElementById('form-config');
+    const selectAmbiente = document.getElementById('{{ form.ambiente_arca.id_for_label }}');
+    if (!form || !selectAmbiente) return;
+
+    const modoInicial = '{{ modo_actual }}';
+
+    form.addEventListener('submit', function (e) {
+        const modoNuevo = selectAmbiente.value === 'PROD' ? 'PRODUCCION' : 'HOMOLOGACION';
+
+        // Si venía en HOMO y ahora va a PROD → confirmar
+        if (modoInicial === 'HOMOLOGACION' && modoNuevo === 'PRODUCCION') {
+            const confirmar = confirm(
+                '⚠️ Estás por activar el MODO PRODUCCIÓN.\n\n' +
+                'Asegurate de que:\n' +
+                '• El certificado de PRODUCCIÓN esté cargado y autorizado\n' +
+                '• El servicio ws_sr_constancia_inscripcion esté adherido en ARCA (no WSASS)\n' +
+                '• El servicio wsfe (facturación) esté autorizado también en producción\n\n' +
+                '¿Continuar?'
+            );
+            if (!confirmar) {
+                e.preventDefault();
+                return false;
+            }
         }
     });
+});
 </script>
-{% endif %}
 {% endblock %}

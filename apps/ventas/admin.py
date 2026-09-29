@@ -26,3 +26,15 @@ class CajaTurnoAdmin(admin.ModelAdmin):
     list_display = ('id', 'vendedor', 'estado', 'monto_inicial', 'monto_final_efectivo', 'diferencia', 'fecha_apertura', 'fecha_cierre')
     list_filter = ('estado', 'vendedor', 'fecha_apertura')
     search_fields = ('vendedor__username', 'observaciones')
+
+
+from django.contrib import admin
+from .models import PerfilRepartidor
+
+
+@admin.register(PerfilRepartidor)
+class PerfilRepartidorAdmin(admin.ModelAdmin):
+    list_display = ('user', 'telefono', 'vehiculo', 'zona', 'activo')
+    list_filter = ('activo', 'zona')
+    search_fields = ('user__username', 'user__first_name', 'user__last_name', 'vehiculo')
+    list_editable = ('activo',)

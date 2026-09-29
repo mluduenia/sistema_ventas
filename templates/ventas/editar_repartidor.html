@@ -1,0 +1,121 @@
+{% extends 'base.html' %}
+
+{% block title %}Editar Repartidor{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3">
+    <div class="row justify-content-center">
+        <div class="col-12 col-lg-8">
+
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-body py-3 border-bottom d-flex justify-content-between align-items-center">
+                    <h5 class="fw-bold mb-0">
+                        <i class="fas fa-user-edit text-primary me-2"></i>
+                        Editar Repartidor: {{ user.get_full_name }}
+                    </h5>
+                    <a href="{% url 'ventas:lista_repartidores' %}" class="btn btn-sm btn-outline-secondary">
+                        <i class="fas fa-arrow-left me-1"></i> Volver
+                    </a>
+                </div>
+                <div class="card-body">
+                    <form method="POST">
+                        {% csrf_token %}
+
+                        <h6 class="fw-bold text-secondary mb-3 border-bottom pb-2">
+                            <i class="fas fa-user me-2"></i> Datos Personales
+                        </h6>
+                        <div class="row g-3 mb-4">
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold small">Usuario (no editable)</label>
+                                <input type="text" class="form-control" value="{{ user.username }}" disabled>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold small">Nueva Contraseña (opcional)</label>
+                                <input type="password" name="password" class="form-control"
+                                       placeholder="Dejar vacío para no cambiar">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold small">Nombre</label>
+                                <input type="text" name="first_name" class="form-control"
+                                       value="{{ user.first_name }}" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold small">Apellido</label>
+                                <input type="text" name="last_name" class="form-control"
+                                       value="{{ user.last_name }}" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold small">DNI</label>
+                                <input type="text" name="dni" class="form-control"
+                                       value="{{ perfil.dni }}">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold small">Teléfono</label>
+                                <input type="text" name="telefono" class="form-control"
+                                       value="{{ perfil.telefono }}">
+                            </div>
+                            <div class="col-md-12">
+                                <label class="form-label fw-bold small">Email</label>
+                                <input type="email" name="email" class="form-control"
+                                       value="{{ user.email }}">
+                            </div>
+                        </div>
+
+                        <h6 class="fw-bold text-secondary mb-3 border-bottom pb-2">
+                            <i class="fas fa-motorcycle me-2"></i> Vehículo y Zona
+                        </h6>
+                        <div class="row g-3 mb-4">
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold small">Vehículo</label>
+                                <input type="text" name="vehiculo" class="form-control"
+                                       value="{{ perfil.vehiculo }}">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold small">Patente</label>
+                                <input type="text" name="patente" class="form-control"
+                                       value="{{ perfil.patente }}">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold small">Zona</label>
+                                <input type="text" name="zona" class="form-control"
+                                       value="{{ perfil.zona }}">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold small">Licencia de Conducir</label>
+                                <input type="text" name="licencia_conducir" class="form-control"
+                                       value="{{ perfil.licencia_conducir }}">
+                            </div>
+                        </div>
+
+                        <div class="row g-3 mb-4">
+                            <div class="col-md-12">
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" name="activo"
+                                           id="chk_activo" {% if perfil.activo %}checked{% endif %}>
+                                    <label class="form-check-label fw-bold small" for="chk_activo">
+                                        Repartidor activo
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="col-md-12">
+                                <label class="form-label fw-bold small">Observaciones</label>
+                                <textarea name="observaciones" class="form-control" rows="2">{{ perfil.observaciones|default:'' }}</textarea>
+                            </div>
+                        </div>
+
+                        <div class="d-flex justify-content-end gap-2 border-top pt-3">
+                            <a href="{% url 'ventas:lista_repartidores' %}" class="btn btn-secondary px-4">
+                                Cancelar
+                            </a>
+                            <button type="submit" class="btn btn-primary px-4 fw-bold">
+                                <i class="fas fa-save me-1"></i> Guardar Cambios
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+        </div>
+    </div>
+</div>
+{% endblock %}

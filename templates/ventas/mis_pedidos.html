@@ -1,0 +1,495 @@
+{% extends 'base.html' %}
+
+{% block title %}Mis Pedidos - Reparto Móvil{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-2 px-2 px-md-3">
+    <!-- Encabezado Móvil y Selector de Vista -->
+    <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+        <div>
+            <h4 class="fw-bold mb-0 text-dark"><i class="fas fa-truck text-primary me-2"></i>Mis Entregas</h4>
+            <small class="text-muted">Hoja de Ruta y Cierre en Calle</small>
+        </div>
+
+        <div class="d-flex align-items-center gap-2">
+            <!-- BOTÓN NUEVA VENTA DIRECTA EN CALLE -->
+            <a href="{% url 'ventas:pos' %}" class="btn btn-sm btn-success fw-bold shadow-sm">
+                <i class="fas fa-plus-circle me-1"></i> Nueva Venta Directa
+            </a>
+
+            <!-- BOTONES TOGGLE VISTA TARJETAS / LISTA -->
+            <div class="btn-group shadow-sm" role="group" aria-label="Modo de Vista">
+                <button type="button" class="btn btn-sm btn-outline-primary active" id="btn-vista-cards" title="Vista Tarjetas">
+                    <i class="fas fa-th-large"></i>
+                </button>
+                <button type="button" class="btn btn-sm btn-outline-primary" id="btn-vista-lista" title="Vista Lista">
+                    <i class="fas fa-list"></i>
+                </button>
+            </div>
+
+            <button onclick="location.reload()" class="btn btn-sm btn-outline-secondary shadow-sm">
+                <i class="fas fa-sync-alt"></i>
+            </button>
+        </div>
+    </div>
+
+    <!-- Leyenda de Código de Colores -->
+    <div class="card border-0 shadow-sm mb-3 bg-body-tertiary">
+        <div class="card-body p-2 d-flex justify-content-around text-center small fw-semibold">
+            <div><span class="badge bg-danger px-2 py-1">Pendiente</span></div>
+            <div><span class="badge bg-success px-2 py-1">Entregado</span></div>
+            <div><span class="badge bg-warning text-dark px-2 py-1">Pospuesto</span></div>
+        </div>
+    </div>
+
+    {% if not pedidos %}
+        <div class="card border-0 shadow-sm text-center py-5 my-3">
+            <div class="card-body">
+                <i class="fas fa-check-circle fa-4x text-success mb-3"></i>
+                <h5 class="fw-bold">¡Sin entregas asignadas!</h5>
+                <p class="text-muted mb-3">No tienes pedidos pendientes de entrega en tu hoja de ruta.</p>
+                <a href="{% url 'ventas:pos' %}" class="btn btn-primary fw-bold">
+                    <i class="fas fa-cash-register me-1"></i> Registrar Venta Directa en Calle
+                </a>
+            </div>
+        </div>
+    {% else %}
+
+        <!-- ========================================================= -->
+        <!-- OPCIÓN 1: VISTA TARJETAS (CARDS GRID) -->
+        <!-- ========================================================= -->
+        <div id="contenedor-cards" class="row g-2">
+            {% for pedido in pedidos %}
+            <div class="col-12 col-md-6" id="tarjeta-pedido-{{ pedido.id }}">
+                <div class="card border-0 shadow-sm border-start border-4 border-{{ pedido.badge_color }}">
+                    <div class="card-body p-3">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <a href="{% url 'ventas:detalle_entrega' pedido.id %}" class="text-decoration-none">
+                                <h5 class="fw-bold text-primary mb-0"><i class="fas fa-map-marked-alt me-1"></i> Pedido #{{ pedido.id }}</h5>
+                            </a>
+                            <span class="badge bg-{{ pedido.badge_color }} px-2 py-1 fs-6">
+                                {{ pedido.get_estado_display }}
+                            </span>
+                        </div>
+
+                        <!-- CLIENTE -->
+                        <p class="mb-1 small">
+                            <strong><i class="fas fa-user text-secondary me-1"></i> Cliente:</strong> 
+                            {% if pedido.cliente %}
+                                {{ pedido.cliente.nombre }}
+                            {% else %}
+                                Consumidor Final
+                            {% endif %}
+                        </p>
+
+                        <!-- DIRECCIÓN (CON ACCESO DIRECTO A GOOGLE MAPS) -->
+                        <p class="mb-1 small d-flex justify-content-between align-items-center">
+                            <span>
+                                <strong><i class="fas fa-map-marker-alt text-danger me-1"></i> Dirección:</strong> 
+                                <span class="fw-semibold text-dark">
+                                    {% if pedido.direccion_entrega %}
+                                        {{ pedido.direccion_entrega }}
+                                    {% elif pedido.cliente and pedido.cliente.direccion %}
+                                        {{ pedido.cliente.direccion }}
+                                    {% else %}
+                                        Venta en Calle / Sin Dirección
+                                    {% endif %}
+                                </span>
+                            </span>
+                            
+                            {% if pedido.direccion_entrega or pedido.cliente.direccion %}
+                            <a href="https://www.google.com/maps/search/?api=1&query={% if pedido.direccion_entrega %}{{ pedido.direccion_entrega|urlencode }}{% else %}{{ pedido.cliente.direccion|urlencode }}{% endif %}" target="_blank" class="btn btn-xs btn-outline-danger fw-bold ms-1" style="padding: 2px 8px; font-size: 11px;">
+                                <i class="fas fa-location-arrow me-1"></i> GPS
+                            </a>
+                            {% endif %}
+                        </p>
+
+                        <!-- TELÉFONO -->
+                        <p class="mb-2 small">
+                            <strong><i class="fas fa-phone text-success me-1"></i> Teléfono:</strong> 
+                            {% if pedido.cliente and pedido.cliente.telefono %}
+                                <a href="tel:{{ pedido.cliente.telefono }}" class="text-decoration-none fw-bold me-2">{{ pedido.cliente.telefono }}</a>
+                                <a href="https://wa.me/{{ pedido.cliente.telefono }}" target="_blank" class="text-success small fw-bold"><i class="fab fa-whatsapp"></i> Chat</a>
+                            {% else %}
+                                <span class="text-muted">No registrado</span>
+                            {% endif %}
+                        </p>
+
+                        <!-- Ítems del Pedido -->
+                        <div class="bg-body-tertiary p-2 rounded mb-3 small">
+                            <strong class="d-block mb-1 text-dark"><i class="fas fa-boxes me-1 text-primary"></i> Mercadería:</strong>
+                            <ul class="list-unstyled mb-0 ps-2">
+                                {% for det in pedido.detalles.all %}
+                                    <li class="py-1 border-bottom border-light">
+                                        <i class="fas fa-caret-right text-primary me-1"></i>
+                                        <strong>{{ det.cantidad }}x</strong> {{ det.producto.nombre }}
+                                    </li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+
+                        <!-- Pie con Total y Botones de Acción -->
+                        <div class="d-flex justify-content-between align-items-center border-top pt-2 flex-wrap gap-2">
+                            <div>
+                                <small class="text-muted d-block" style="font-size: 11px;">Monto a Cobrar</small>
+                                <span class="fs-4 fw-bold text-success">${{ pedido.total }}</span>
+                            </div>
+
+                            <div class="d-flex gap-1">
+                                <!-- BOTÓN VER DETALLE Y MAPA -->
+                                <a href="{% url 'ventas:detalle_entrega' pedido.id %}" class="btn btn-outline-primary btn-sm fw-bold">
+                                    <i class="fas fa-map me-1"></i> Mapa
+                                </a>
+
+                                {% if pedido.estado == 'PENDIENTE_ENTREGA' %}
+                                <button class="btn btn-success fw-bold btn-sm shadow-sm" onclick="abrirModalCierreReparto({{ pedido.id }}, '{{ pedido.total }}', '{{ pedido.metodo_pago }}')">
+                                    <i class="fas fa-cash-register me-1"></i> Cobrar
+                                </button>
+                                <button class="btn btn-outline-warning text-dark fw-bold btn-sm" onclick="abrirModalPospuesto({{ pedido.id }})">
+                                    <i class="fas fa-pause-circle"></i>
+                                </button>
+                                {% else %}
+                                <a href="{% url 'ventas:comprobante_factura' pedido.id %}" target="_blank" class="btn btn-sm btn-outline-secondary">
+                                    <i class="fas fa-file-pdf"></i> PDF
+                                </a>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+
+        <!-- ========================================================= -->
+        <!-- OPCIÓN 2: VISTA TABLA / LISTA COMPACTA -->
+        <!-- ========================================================= -->
+        <div id="contenedor-lista" class="card border-0 shadow-sm d-none">
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="table-light small text-uppercase">
+                            <tr>
+                                <th>N°</th>
+                                <th>Cliente / Dirección</th>
+                                <th>Mercadería</th>
+                                <th class="text-end">Total</th>
+                                <th class="text-center">Estado</th>
+                                <th class="text-end" style="min-width: 190px;">Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for pedido in pedidos %}
+                            <tr class="border-start border-4 border-{{ pedido.badge_color }}">
+                                <td class="fw-bold">
+                                    <a href="{% url 'ventas:detalle_entrega' pedido.id %}" class="text-decoration-none fw-bold">
+                                        #{{ pedido.id }}
+                                    </a>
+                                </td>
+                                <td>
+                                    <strong class="d-block text-dark">
+                                        {% if pedido.cliente %}
+                                            {{ pedido.cliente.nombre }}
+                                        {% else %}
+                                            Consumidor Final
+                                        {% endif %}
+                                    </strong>
+                                    <small class="text-muted d-block">
+                                        <i class="fas fa-map-marker-alt text-danger me-1"></i>
+                                        {% if pedido.direccion_entrega %}
+                                            {{ pedido.direccion_entrega }}
+                                        {% elif pedido.cliente and pedido.cliente.direccion %}
+                                            {{ pedido.cliente.direccion }}
+                                        {% else %}
+                                            Venta en Calle / Sin Dirección
+                                        {% endif %}
+                                    </small>
+                                </td>
+                                <td class="small">
+                                    {% for det in pedido.detalles.all %}
+                                        <span class="d-block text-truncate" style="max-width: 220px;">• <strong>{{ det.cantidad }}x</strong> {{ det.producto.nombre }}</span>
+                                    {% endfor %}
+                                </td>
+                                <td class="text-end fw-bold text-success fs-6">${{ pedido.total }}</td>
+                                <td class="text-center">
+                                    <span class="badge bg-{{ pedido.badge_color }} px-2 py-1">
+                                        {{ pedido.get_estado_display }}
+                                    </span>
+                                </td>
+                                <td class="text-end">
+                                    <div class="btn-group btn-group-sm">
+                                        <a href="{% url 'ventas:detalle_entrega' pedido.id %}" class="btn btn-outline-primary" title="Ver Detalle y Mapa">
+                                            <i class="fas fa-map"></i>
+                                        </a>
+
+                                        {% if pedido.estado == 'PENDIENTE_ENTREGA' %}
+                                        <button class="btn btn-success fw-bold" onclick="abrirModalCierreReparto({{ pedido.id }}, '{{ pedido.total }}', '{{ pedido.metodo_pago }}')" title="Cerrar y Cobrar">
+                                            <i class="fas fa-cash-register me-1"></i> Cobrar
+                                        </button>
+                                        <button class="btn btn-warning text-dark fw-bold" onclick="abrirModalPospuesto({{ pedido.id }})" title="Marcar Pospuesto">
+                                            <i class="fas fa-pause-circle"></i>
+                                        </button>
+                                        {% else %}
+                                        <a href="{% url 'ventas:comprobante_factura' pedido.id %}" target="_blank" class="btn btn-outline-secondary">
+                                            <i class="fas fa-file-pdf"></i> PDF
+                                        </a>
+                                        {% endif %}
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+    {% endif %}
+</div>
+
+<!-- MODAL UNIFICADO DE CIERRE / EMISIÓN DE REPARTO -->
+<div class="modal fade" id="modalCierreReparto" tabindex="-1" aria-hidden="true" data-bs-backdrop="static">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg">
+            <div class="modal-header bg-primary text-white py-2">
+                <h5 class="modal-title fs-6 fw-bold"><i class="fas fa-file-invoice me-2"></i> Cerrar Venta y Emisión de Salida</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" id="btn-cerrar-modal"></button>
+            </div>
+            
+            <div class="modal-body py-3" id="body-cierre-form">
+                <input type="hidden" id="modal_venta_id">
+
+                <div class="bg-light p-2 rounded mb-3 text-center border">
+                    <span class="d-block small text-muted text-uppercase fw-semibold">Monto Total de la Venta</span>
+                    <strong id="modal_monto_total_display" class="fs-2 text-success font-monospace">$0.00</strong>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label fw-bold small text-secondary">Forma de Pago del Cliente:</label>
+                    <select id="modal_metodo_pago" class="form-select form-select-lg fw-bold">
+                        <option value="EFECTIVO">💵 Efectivo en Mano</option>
+                        <option value="TRANSFERENCIA">📱 Mercado Pago / Transferencia</option>
+                        <option value="TARJETA_DEBITO">💳 Débito (Posnet Móvil)</option>
+                        <option value="TARJETA_CREDITO">💳 Crédito (Posnet Móvil)</option>
+                    </select>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label small text-secondary">Nota de Entrega (Opcional):</label>
+                    <input type="text" id="modal_observaciones_cierre" class="form-control form-control-sm" placeholder="Ej: Entregado en portería">
+                </div>
+
+                <p class="text-muted small fw-semibold text-center mb-2">Selecciona el tipo de salida / comprobante:</p>
+                <div class="d-grid gap-2">
+                    <button type="button" class="btn btn-warning py-2 fw-bold text-start px-3 btn-accion-cierre" onclick="ejecutarCierreVenta('REMITO')">
+                        <i class="fas fa-truck me-2"></i> 1. Emitir Remito de Entrega (Letra R)
+                    </button>
+                    <button type="button" class="btn btn-outline-info py-2 fw-semibold text-start px-3 btn-accion-cierre" onclick="ejecutarCierreVenta('PRESUPUESTO')">
+                        <i class="fas fa-file-alt me-2"></i> 2. Generar Presupuesto / Cotización
+                    </button>
+                    <button type="button" class="btn btn-success py-2 fw-semibold text-start px-3 btn-accion-cierre" onclick="ejecutarCierreVenta('FACTURA')">
+                        <i class="fas fa-receipt me-2"></i> 3. Facturar Directo en ARCA / AFIP
+                    </button>
+                    <button type="button" class="btn btn-secondary py-2 fw-semibold text-start px-3 btn-accion-cierre" onclick="ejecutarCierreVenta('ENVIAR')">
+                        <i class="fas fa-envelope me-2"></i> 4. Solo Registrar Cobro / Guardar
+                    </button>
+                </div>
+
+                <div id="error-cierre-msg" class="alert alert-danger p-2 small mt-3 d-none"></div>
+            </div>
+
+            <div class="modal-body py-4 text-center d-none" id="body-cierre-exito">
+                <div class="text-success mb-2">
+                    <i class="fas fa-check-circle fa-4x"></i>
+                </div>
+                <h5 class="fw-bold text-dark">¡Operación Concluida!</h5>
+                <p class="small text-muted mb-3" id="lbl-estado-cierre">El pedido fue actualizado correctamente.</p>
+
+                <div class="d-grid gap-2 col-11 mx-auto">
+                    <a id="btn-descargar-remito" href="#" target="_blank" class="btn btn-primary btn-lg fw-bold text-start px-3">
+                        <i class="fas fa-file-pdf me-2"></i> Descargar Comprobante / Remito (R)
+                    </a>
+                    <a id="btn-ticket-remito" href="#" target="_blank" class="btn btn-outline-dark fw-semibold text-start px-3">
+                        <i class="fas fa-print me-2"></i> Ticket Térmico
+                    </a>
+                    <button type="button" class="btn btn-secondary mt-2" onclick="location.reload()">
+                        Siguiente Entrega <i class="fas fa-arrow-right ms-1"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL REGISTRAR POSPUESTO -->
+<div class="modal fade" id="modalPospuesto" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg">
+            <div class="modal-header bg-warning text-dark py-2">
+                <h5 class="modal-title fs-6 fw-bold"><i class="fas fa-exclamation-triangle me-2"></i> Marcar como Pospuesto</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body py-3">
+                <input type="hidden" id="modal_pospuesto_venta_id">
+                <div class="mb-3">
+                    <label class="form-label fw-bold small text-secondary">Motivo por el cual no se entregó:</label>
+                    <select id="modal_motivo_pospuesto" class="form-select">
+                        <option value="AUSENTE">Cliente No Se Encontraba en Domicilio</option>
+                        <option value="RECHAZADO">Cliente Rechazó el Pedido</option>
+                        <option value="DIRECCION_ERRONEA">Dirección Incorrecta / No Ubicado</option>
+                        <option value="REPROGRAMADO">Reprogramado para Otra Fecha</option>
+                    </select>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label small text-secondary">Observación adicional:</label>
+                    <input type="text" id="modal_observaciones_pospuesto" class="form-control" placeholder="Ej: Llamé 3 veces y no atendió">
+                </div>
+                <div id="error-pospuesto-msg" class="alert alert-danger p-2 small mt-2 d-none"></div>
+            </div>
+            <div class="modal-footer py-2">
+                <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-warning fw-bold text-dark" id="btn-guardar-pospuesto" onclick="guardarPospuesto()">
+                    Confirmar Pospuesto
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let modalCierreInst = null;
+let modalPospuestoInst = null;
+
+document.addEventListener('DOMContentLoaded', function() {
+    modalCierreInst = new bootstrap.Modal(document.getElementById('modalCierreReparto'));
+    modalPospuestoInst = new bootstrap.Modal(document.getElementById('modalPospuesto'));
+
+    const btnCards = document.getElementById('btn-vista-cards');
+    const btnLista = document.getElementById('btn-vista-lista');
+    const contenedorCards = document.getElementById('contenedor-cards');
+    const contenedorLista = document.getElementById('contenedor-lista');
+
+    const vistaGuardada = localStorage.getItem('vista_mis_pedidos') || 'cards';
+    aplicarVista(vistaGuardada);
+
+    btnCards.addEventListener('click', () => aplicarVista('cards'));
+    btnLista.addEventListener('click', () => aplicarVista('lista'));
+
+    function aplicarVista(modo) {
+        if (modo === 'lista') {
+            contenedorCards.classList.add('d-none');
+            contenedorLista.classList.remove('d-none');
+            btnLista.classList.add('active');
+            btnCards.classList.remove('active');
+        } else {
+            contenedorLista.classList.add('d-none');
+            contenedorCards.classList.remove('d-none');
+            btnCards.classList.add('active');
+            btnLista.classList.remove('active');
+        }
+        localStorage.setItem('vista_mis_pedidos', modo);
+    }
+});
+
+function abrirModalCierreReparto(ventaId, total, metodoPagoOriginal) {
+    document.getElementById('modal_venta_id').value = ventaId;
+    document.getElementById('modal_monto_total_display').textContent = '$' + parseFloat(total).toFixed(2);
+    if (metodoPagoOriginal) document.getElementById('modal_metodo_pago').value = metodoPagoOriginal;
+
+    document.getElementById('error-cierre-msg').classList.add('d-none');
+    document.getElementById('body-cierre-form').classList.remove('d-none');
+    document.getElementById('body-cierre-exito').classList.add('d-none');
+    
+    modalCierreInst.show();
+}
+
+function abrirModalPospuesto(ventaId) {
+    document.getElementById('modal_pospuesto_venta_id').value = ventaId;
+    document.getElementById('error-pospuesto-msg').classList.add('d-none');
+    modalPospuestoInst.show();
+}
+
+function ejecutarCierreVenta(accionComprobante) {
+    const ventaId = document.getElementById('modal_venta_id').value;
+    const metodoPago = document.getElementById('modal_metodo_pago').value;
+    const obs = document.getElementById('modal_observaciones_cierre').value;
+    const errBox = document.getElementById('error-cierre-msg');
+
+    const btns = document.querySelectorAll('.btn-accion-cierre');
+    btns.forEach(b => b.disabled = true);
+    errBox.classList.add('d-none');
+
+    fetch(`/ventas/marcar-entregado/${ventaId}/`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': '{{ csrf_token }}'
+        },
+        body: JSON.stringify({
+            metodo_pago: metodoPago,
+            observaciones: obs,
+            accion_comprobante: accionComprobante
+        })
+    })
+    .then(r => r.json())
+    .then(data => {
+        btns.forEach(b => b.disabled = false);
+        if (data.status === 'success') {
+            document.getElementById('body-cierre-form').classList.add('d-none');
+            document.getElementById('body-cierre-exito').classList.remove('d-none');
+            document.getElementById('lbl-estado-cierre').textContent = `Estado: ${data.estado_display || 'Entregado'} | Cobrado con ${metodoPago}`;
+            
+            document.getElementById('btn-descargar-remito').href = `/ventas/comprobante/${ventaId}/factura/`;
+            document.getElementById('btn-ticket-remito').href = `/ventas/comprobante/${ventaId}/ticket/`;
+        } else {
+            errBox.textContent = data.message || "No se pudo cerrar la venta.";
+            errBox.classList.remove('d-none');
+        }
+    })
+    .catch(() => {
+        btns.forEach(b => b.disabled = false);
+        errBox.textContent = "Error de conexión con el servidor.";
+        errBox.classList.remove('d-none');
+    });
+}
+
+function guardarPospuesto() {
+    const ventaId = document.getElementById('modal_pospuesto_venta_id').value;
+    const motivo = document.getElementById('modal_motivo_pospuesto').value;
+    const obs = document.getElementById('modal_observaciones_pospuesto').value;
+    const btn = document.getElementById('btn-guardar-pospuesto');
+    const errBox = document.getElementById('error-pospuesto-msg');
+
+    btn.disabled = true;
+
+    fetch(`/ventas/marcar-pospuesto/${ventaId}/`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': '{{ csrf_token }}'
+        },
+        body: JSON.stringify({
+            motivo: motivo,
+            observaciones: obs,
+            reintegrar_stock: true
+        })
+    })
+    .then(r => r.json())
+    .then(data => {
+        btn.disabled = false;
+        if (data.status === 'success') {
+            modalPospuestoInst.hide();
+            location.reload();
+        } else {
+            errBox.textContent = data.message || "Error al posponer.";
+            errBox.classList.remove('d-none');
+        }
+    })
+    .catch(() => {
+        btn.disabled = false;
+        errBox.textContent = "Error de conexión con el servidor.";
+        errBox.classList.remove('d-none');
+    });
+}
+</script>
+{% endblock %}

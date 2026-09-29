@@ -1,11 +1,12 @@
 from django import forms
 from .models import EmpresaConfig
 
+
 class EmpresaConfigForm(forms.ModelForm):
     class Meta:
         model = EmpresaConfig
         fields = [
-            'logo',  # 👈 Nuevo campo agregado al principio
+            'logo',
             'razon_social',
             'nombre_fantasia',
             'cuit',
@@ -26,7 +27,7 @@ class EmpresaConfigForm(forms.ModelForm):
             'clave_privada_key',
         ]
         widgets = {
-            'logo': forms.FileInput(attrs={'class': 'form-control', 'accept': 'image/*'}), # 👈 Widget con filtro para imágenes
+            'logo': forms.FileInput(attrs={'class': 'form-control', 'accept': 'image/*'}),
             'razon_social': forms.TextInput(attrs={'class': 'form-control', 'required': True}),
             'nombre_fantasia': forms.TextInput(attrs={'class': 'form-control'}),
             'cuit': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Ej: 20-12345678-9', 'required': True}),
@@ -36,13 +37,11 @@ class EmpresaConfigForm(forms.ModelForm):
             'direccion': forms.TextInput(attrs={'class': 'form-control'}),
             'telefono': forms.TextInput(attrs={'class': 'form-control'}),
             'email': forms.EmailInput(attrs={'class': 'form-control'}),
-            # SMTP
             'email_smtp_host': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'smtp.gmail.com'}),
             'email_smtp_port': forms.NumberInput(attrs={'class': 'form-control'}),
             'email_smtp_user': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'correo@miempresa.com'}),
             'email_smtp_password': forms.PasswordInput(attrs={'class': 'form-control', 'render_value': True, 'placeholder': '••••••••••••••••'}),
             'email_smtp_use_tls': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
-            # ARCA
             'punto_de_venta': forms.NumberInput(attrs={'class': 'form-control', 'min': 1}),
             'ambiente_arca': forms.Select(attrs={'class': 'form-select'}),
             'certificado_crt': forms.FileInput(attrs={'class': 'form-control'}),

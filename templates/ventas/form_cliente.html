@@ -15,7 +15,7 @@
             <div class="card-body p-4">
                 <form method="POST">
                     {% csrf_token %}
-                    
+
                     <div class="row g-3">
                         <div class="col-md-12">
                             <label class="form-label fw-bold">Nombre Completo o Razón Social</label>
@@ -27,9 +27,19 @@
                             {{ form.tipo_documento }}
                         </div>
 
+                        <!-- 🔽 CAMBIO 1: Número de Documento + Botón ARCA -->
                         <div class="col-md-4">
                             <label class="form-label fw-bold">Número de Documento</label>
-                            {{ form.numero_documento }}
+                            <div class="input-group">
+                                {{ form.numero_documento }}
+                                <button type="button"
+                                        class="btn btn-outline-primary"
+                                        id="btn-consultar-padron"
+                                        title="Consultar datos en ARCA por CUIT">
+                                    <i class="fas fa-cloud-download-alt"></i> ARCA
+                                </button>
+                            </div>
+                            <small id="padron-status" class="d-block mt-1"></small>
                         </div>
 
                         <div class="col-md-4">
@@ -64,4 +74,84 @@
         </div>
     </div>
 </div>
+
+<!-- 🔽 CAMBIO 2: Script de autorrelleno por CUIT (ARCA) -->
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const btn = document.getElementById('btn-consultar-padron');
+    const statusEl = document.getElementById('padron-status');
+    const inputCuit = document.querySelector('input[name="numero_documento"]');
+
+    if (!btn || !inputCuit) return;
+
+    // Formateo automático del CUIT mientras se escribe: 20-12345678-9
+    inputCuit.addEventListener('input', function (e) {
+        let v = e.target.value.replace(/\D/g, '').slice(0, 11);
+        if (v.length > 10) {
+            v = v.replace(/^(\d{2})(\d{8})(\d+)/, '$1-$2-$3');
+        } else if (v.length > 2) {
+            v = v.replace(/^(\d{2})(\d+)/, '$1-$2');
+        }
+        e.target.value = v;
+    });
+
+    btn.addEventListener('click', function () {
+        const cuit = inputCuit.value.replace(/\D/g, '');
+        if (cuit.length !== 11) {
+            statusEl.className = 'text-danger d-block mt-1';
+            statusEl.textContent = 'Ingresá un CUIT de 11 dígitos.';
+            return;
+        }
+
+        statusEl.className = 'text-muted d-block mt-1';
+        statusEl.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Consultando ARCA...';
+        btn.disabled = true;
+
+        fetch(`{% url 'ventas:consultar_padron' %}?cuit=${cuit}`)
+            .then(r => r.json())
+            .then(res => {
+                if (!res.success) {
+                    statusEl.className = 'text-danger d-block mt-1';
+                    statusEl.textContent = res.error || 'No se pudo obtener datos.';
+                    return;
+                }
+
+                const d = res.data;
+
+                const setVal = (name, val) => {
+                    const el = document.querySelector(`[name="${name}"]`);
+                    if (el && val) el.value = val;
+                };
+
+                setVal('nombre', d.nombre);
+                setVal('direccion', d.direccion);
+
+                const setSelect = (name, val) => {
+                    const el = document.querySelector(`select[name="${name}"]`);
+                    if (!el || !val) return;
+                    let opt = Array.from(el.options).find(o => o.value === val);
+                    if (!opt) {
+                        const upper = String(val).toUpperCase();
+                        opt = Array.from(el.options).find(o =>
+                            o.text.toUpperCase().includes(upper) ||
+                            upper.includes(o.text.toUpperCase().trim())
+                        );
+                    }
+                    if (opt) el.value = opt.value;
+                };
+
+                setSelect('tipo_documento', d.tipo_documento);
+                setSelect('condicion_iva', d.condicion_iva);
+
+                statusEl.className = 'text-success d-block mt-1';
+                statusEl.innerHTML = '<i class="fas fa-check-circle"></i> Datos cargados desde ARCA.';
+            })
+            .catch(err => {
+                statusEl.className = 'text-danger d-block mt-1';
+                statusEl.textContent = 'Error de conexión: ' + err;
+            })
+            .finally(() => btn.disabled = false);
+    });
+});
+</script>
 {% endblock %}
