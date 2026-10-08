@@ -1,0 +1,116 @@
+{% extends 'base.html' %}
+
+{% block title %}Nueva Sucursal{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3">
+    <div class="row justify-content-center">
+        <div class="col-12 col-lg-8">
+
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-body py-3 border-bottom d-flex justify-content-between align-items-center">
+                    <h5 class="fw-bold mb-0">
+                        <i class="fas fa-store text-success me-2"></i> Nueva Sucursal
+                    </h5>
+                    <a href="{% url 'configuracion:lista_sucursales' %}" class="btn btn-sm btn-outline-secondary">
+                        <i class="fas fa-arrow-left me-1"></i> Volver
+                    </a>
+                </div>
+                <div class="card-body">
+                    <form method="POST">
+                        {% csrf_token %}
+
+                        <div class="row g-3 mb-4">
+                            <div class="col-md-8">
+                                <label class="form-label fw-bold small">
+                                    Nombre <span class="text-danger">*</span>
+                                </label>
+                                <input type="text" name="nombre" class="form-control"
+                                       value="{{ form_data.nombre|default:'' }}"
+                                       placeholder="Ej: Sucursal Centro" required>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label fw-bold small">Tipo</label>
+                                <select name="tipo" class="form-select">
+                                    <option value="CENTRAL">Central / Planta</option>
+                                    <option value="SUCURSAL" selected>Sucursal</option>
+                                    <option value="DEPOSITO">Depósito</option>
+                                </select>
+                            </div>
+
+                            <div class="col-md-8">
+                                <label class="form-label fw-bold small">Dirección</label>
+                                <input type="text" name="direccion" class="form-control"
+                                       value="{{ form_data.direccion|default:'' }}">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label fw-bold small">Teléfono</label>
+                                <input type="text" name="telefono" class="form-control"
+                                       value="{{ form_data.telefono|default:'' }}">
+                            </div>
+
+                            <div class="col-md-8">
+                                <label class="form-label fw-bold small">Email</label>
+                                <input type="email" name="email" class="form-control"
+                                       value="{{ form_data.email|default:'' }}">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label fw-bold small">Punto de Venta ARCA</label>
+                                <input type="number" name="punto_de_venta_arca" class="form-control"
+                                       value="{{ form_data.punto_de_venta_arca|default:1 }}" min="1">
+                                <small class="text-muted">Nº de PV en ARCA</small>
+                            </div>
+
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold small">Lista de Precios</label>
+                                <select name="lista_precio" class="form-select">
+                                    <option value="">-- Sin asignar --</option>
+                                    {% for lista in listas_precio %}
+                                        <option value="{{ lista.id }}"
+                                                {% if form_data.lista_precio == lista.id|stringformat:"s" %}selected{% endif %}>
+                                            {{ lista.nombre }}
+                                        </option>
+                                    {% endfor %}
+                                </select>
+                                <small class="text-muted">Lista de precios que usará esta sucursal</small>
+                            </div>
+                        </div>
+
+                        <div class="row g-3 mb-4">
+                            <div class="col-md-6">
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" name="activa"
+                                           id="chk_activa" checked>
+                                    <label class="form-check-label fw-bold small" for="chk_activa">
+                                        Sucursal activa
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" name="es_central"
+                                           id="chk_central">
+                                    <label class="form-check-label fw-bold small" for="chk_central">
+                                        Es la sucursal Central / Principal
+                                    </label>
+                                </div>
+                                <small class="text-muted">Solo puede haber una central</small>
+                            </div>
+                        </div>
+
+                        <div class="d-flex justify-content-end gap-2 border-top pt-3">
+                            <a href="{% url 'configuracion:lista_sucursales' %}" class="btn btn-secondary px-4">
+                                Cancelar
+                            </a>
+                            <button type="submit" class="btn btn-success px-4 fw-bold">
+                                <i class="fas fa-save me-1"></i> Crear Sucursal
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+        </div>
+    </div>
+</div>
+{% endblock %}

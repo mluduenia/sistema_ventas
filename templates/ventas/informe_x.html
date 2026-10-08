@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Informe X - Turno #{{ informe.turno.id }}</title>
+    <style>
+        body { font-family: monospace; width: 280px; margin: 0 auto; padding: 10px; font-size: 12px; }
+        .text-center { text-align: center; }
+        .line { border-top: 1px dashed #000; margin: 8px 0; }
+        .flex { display: flex; justify-content: space-between; }
+        .fw-bold { font-weight: bold; }
+        .small { font-size: 10px; }
+        @media print {
+            .no-print { display: none !important; }
+            body { width: 280px; }
+        }
+    </style>
+</head>
+<body onload="window.print()">
+
+
+
+    <!-- ENCABEZADO -->
+    <div class="text-center">
+        <strong>{{ config.nombre_fantasia|default:config.razon_social|default:"MI COMERCIO" }}</strong><br>
+        CUIT: {{ config.cuit|default:"-" }}<br>
+        {{ config.direccion|default:"" }}
+    </div>
+
+    <div class="line"></div>
+
+    <div class="text-center fw-bold">
+        *** INFORME X ***<br>
+        <span class="small">PARCIAL - NO VÁLIDO COMO CIERRE</span>
+    </div>
+
+    <div class="line"></div>
+
+    <!-- DATOS DEL TURNO -->
+    <div>
+        <strong>Turno:</strong> #{{ informe.turno.id }}<br>
+        <strong>Sucursal:</strong> {{ informe.turno.sucursal.nombre|default:"-" }}<br>
+        <strong>Cajero:</strong> {{ informe.turno.vendedor.get_full_name|default:informe.turno.vendedor.username }}<br>
+        <strong>Apertura:</strong> {{ informe.turno.fecha_apertura|date:"d/m/Y H:i" }} hs<br>
+        <strong>Emisión:</strong> {{ informe.fecha_emision|date:"d/m/Y H:i" }} hs
+    </div>
+
+    <div class="line"></div>
+
+    <!-- TOTALES POR MEDIO DE PAGO -->
+    <div class="flex"><span>Efectivo:</span><span>${{ informe.total_efectivo|floatformat:2 }}</span></div>
+    <div class="flex"><span>Débito:</span><span>${{ informe.total_debito|floatformat:2 }}</span></div>
+    <div class="flex"><span>Crédito:</span><span>${{ informe.total_credito|floatformat:2 }}</span></div>
+    <div class="flex"><span>Transferencia:</span><span>${{ informe.total_transferencia|floatformat:2 }}</span></div>
+
+    <div class="line"></div>
+
+    <div class="flex fw-bold" style="font-size: 14px;">
+        <span>TOTAL:</span>
+        <span>${{ informe.total_general|floatformat:2 }}</span>
+    </div>
+
+    <div class="flex" style="margin-top: 5px;">
+        <span>Operaciones:</span>
+        <span>{{ informe.cantidad_operaciones }}</span>
+    </div>
+
+    <div class="line"></div>
+
+    <div class="text-center small">
+        Documento de control interno.<br>
+        NO cierra el turno.<br>
+        Emitido por: {{ informe.emitido_por.get_full_name|default:informe.emitido_por.username|default:"-" }}
+    </div>
+
+    <div class="line"></div>
+    <div class="text-center small">--- FIN DEL INFORME X ---</div>
+
+</body>
+</html>

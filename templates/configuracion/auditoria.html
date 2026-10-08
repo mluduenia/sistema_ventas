@@ -1,0 +1,197 @@
+{% extends 'base.html' %}
+
+{% block title %}Auditoría del Sistema{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3">
+
+    <!-- ENCABEZADO -->
+    <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+        <h3 class="fw-bold mb-0">
+            <i class="fas fa-history text-primary me-2"></i> Auditoría del Sistema
+        </h3>
+        <span class="badge bg-secondary fs-6">
+            {{ total }} evento{{ total|pluralize }}
+        </span>
+    </div>
+
+    <!-- KPIs -->
+    <div class="row g-3 mb-4">
+        <div class="col-md-4">
+            <div class="card border-0 shadow-sm border-start border-4 border-primary">
+                <div class="card-body">
+                    <span class="text-muted small d-block">Total eventos</span>
+                    <span class="fw-bold fs-3">{{ total }}</span>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card border-0 shadow-sm border-start border-4 border-warning">
+                <div class="card-body">
+                    <span class="text-muted small d-block">Advertencias</span>
+                    <span class="fw-bold fs-3 text-warning">{{ warnings }}</span>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card border-0 shadow-sm border-start border-4 border-danger">
+                <div class="card-body">
+                    <span class="text-muted small d-block">Críticos</span>
+                    <span class="fw-bold fs-3 text-danger">{{ criticos }}</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- FILTROS -->
+    <div class="card border-0 shadow-sm mb-3">
+        <div class="card-body">
+            <form method="GET" class="row g-2">
+                <div class="col-md-2">
+                    <label class="small fw-bold text-secondary">Desde</label>
+                    <input type="date" name="fecha_desde" class="form-control form-control-sm" value="{{ filtros.fecha_desde }}">
+                </div>
+                <div class="col-md-2">
+                    <label class="small fw-bold text-secondary">Hasta</label>
+                    <input type="date" name="fecha_hasta" class="form-control form-control-sm" value="{{ filtros.fecha_hasta }}">
+                </div>
+                <div class="col-md-2">
+                    <label class="small fw-bold text-secondary">Usuario</label>
+                    <select name="usuario" class="form-select form-select-sm">
+                        <option value="">-- Todos --</option>
+                        {% for u in usuarios %}
+                        <option value="{{ u.id }}" {% if filtros.usuario == u.id|stringformat:"s" %}selected{% endif %}>
+                            {{ u.username }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="small fw-bold text-secondary">Acción</label>
+                    <select name="accion" class="form-select form-select-sm">
+                        <option value="">-- Todas --</option>
+                        {% for code, label in acciones_disponibles %}
+                        <option value="{{ code }}" {% if filtros.accion == code %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-1">
+                    <label class="small fw-bold text-secondary">Nivel</label>
+                    <select name="nivel" class="form-select form-select-sm">
+                        <option value="">--</option>
+                        {% for code, label in niveles_disponibles %}
+                        <option value="{{ code }}" {% if filtros.nivel == code %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-1">
+                    <label class="small fw-bold text-secondary">Modelo</label>
+                    <input type="text" name="modelo" class="form-control form-control-sm"
+                           value="{{ filtros.modelo }}" placeholder="Venta">
+                </div>
+                <div class="col-md-2">
+                    <label class="small fw-bold text-secondary">Buscar</label>
+                    <input type="text" name="q" class="form-control form-control-sm"
+                           value="{{ filtros.q }}" placeholder="Texto libre...">
+                </div>
+                <div class="col-md-12 d-flex justify-content-end gap-2 mt-2">
+                    <button type="submit" class="btn btn-sm btn-primary">
+                        <i class="fas fa-search me-1"></i> Filtrar
+                    </button>
+                    <a href="{% url 'configuracion:auditoria' %}" class="btn btn-sm btn-outline-secondary">
+                        <i class="fas fa-undo me-1"></i> Limpiar
+                    </a>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- TABLA -->
+    <div class="card border-0 shadow-sm">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-dark">
+                        <tr>
+                            <th style="width: 130px;">Fecha</th>
+                            <th style="width: 130px;">Usuario</th>
+                            <th style="width: 60px;" class="text-center"></th>
+                            <th style="width: 140px;">Acción</th>
+                            <th>Descripción</th>
+                            <th style="width: 100px;">IP</th>
+                            <th style="width: 60px;" class="text-center"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for log in page_obj %}
+                        <tr>
+                            <td class="small">{{ log.fecha|date:"d/m/Y H:i:s" }}</td>
+                            <td class="small">
+                                <strong>{{ log.usuario.username|default:"Anónimo" }}</strong>
+                                {% if log.rol_snapshot %}
+                                    <br><small class="text-muted">{{ log.rol_snapshot|upper }}</small>
+                                {% endif %}
+                            </td>
+                            <td class="text-center">
+                                <i class="fas {{ log.icono_accion }} fs-5"></i>
+                            </td>
+                            <td>
+                                <span class="badge bg-{{ log.badge_color }}">{{ log.get_accion_display }}</span>
+                                {% if log.nivel == 'CRITICAL' %}
+                                    <span class="badge bg-danger ms-1">CRÍTICO</span>
+                                {% elif log.nivel == 'WARNING' %}
+                                    <span class="badge bg-warning text-dark ms-1">WARN</span>
+                                {% endif %}
+                            </td>
+                            <td class="small">{{ log.descripcion|truncatechars:120 }}</td>
+                            <td class="small text-muted">{{ log.ip|default:"-" }}</td>
+                            <td class="text-center">
+                                <a href="{% url 'configuracion:auditoria_detalle' log.id %}"
+                                   class="btn btn-sm btn-outline-primary" title="Ver detalle">
+                                    <i class="fas fa-eye"></i>
+                                </a>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="7" class="text-center text-muted py-5">
+                                <i class="fas fa-history fa-3x mb-3 d-block opacity-25"></i>
+                                No hay eventos con los filtros actuales.
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Paginación -->
+        {% if page_obj.has_other_pages %}
+        <div class="card-footer bg-body py-2">
+            <nav>
+                <ul class="pagination pagination-sm mb-0 justify-content-center">
+                    {% if page_obj.has_previous %}
+                        <li class="page-item">
+                            <a class="page-link" href="?page={{ page_obj.previous_page_number }}&fecha_desde={{ filtros.fecha_desde }}&fecha_hasta={{ filtros.fecha_hasta }}&usuario={{ filtros.usuario }}&accion={{ filtros.accion }}&nivel={{ filtros.nivel }}&modelo={{ filtros.modelo }}&q={{ filtros.q }}">
+                                &laquo;
+                            </a>
+                        </li>
+                    {% endif %}
+                    <li class="page-item disabled">
+                        <span class="page-link">Página {{ page_obj.number }} / {{ page_obj.paginator.num_pages }}</span>
+                    </li>
+                    {% if page_obj.has_next %}
+                        <li class="page-item">
+                            <a class="page-link" href="?page={{ page_obj.next_page_number }}&fecha_desde={{ filtros.fecha_desde }}&fecha_hasta={{ filtros.fecha_hasta }}&usuario={{ filtros.usuario }}&accion={{ filtros.accion }}&nivel={{ filtros.nivel }}&modelo={{ filtros.modelo }}&q={{ filtros.q }}">
+                                &raquo;
+                            </a>
+                        </li>
+                    {% endif %}
+                </ul>
+            </nav>
+        </div>
+        {% endif %}
+    </div>
+
+</div>
+{% endblock %}

@@ -30,4 +30,11 @@ urlpatterns = [
     path('repartidores/<int:repartidor_id>/editar/', views.editar_repartidor_view, name='editar_repartidor'),
     path('marcar-entregado-admin/<int:venta_id>/', views.marcar_entregado_admin_ajax, name='marcar_entregado_admin'),
     path('marcar-entregado-admin/<int:venta_id>/', views.marcar_entregado_admin_ajax, name='marcar_entregado_admin'),
+    path('repartidores/<int:repartidor_id>/baja/', views.dar_baja_repartidor_view, name='dar_baja_repartidor'),
+    path('repartidores/<int:repartidor_id>/reactivar/', views.reactivar_repartidor_view, name='reactivar_repartidor'),
+    path('clientes/', views.lista_clientes_view, name='lista_clientes'),
+    path('clientes/<int:cliente_id>/ficha/', views.ficha_cliente_view, name='ficha_cliente'),
+    path('informe-x/', views.informe_x_view, name='informe_x'),
+    path('informe/<int:informe_id>/imprimir/', views.imprimir_informe_view, name='imprimir_informe'),
+    path('informes/', views.lista_informes_view, name='lista_informes'),
 ]

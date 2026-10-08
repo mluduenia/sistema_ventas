@@ -1,0 +1,117 @@
+{% extends 'base.html' %}
+
+{% block title %}Historial de Informes{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3">
+
+    <div class="card border-0 shadow-sm mb-3">
+        <div class="card-body">
+            <h4 class="fw-bold mb-3">
+                <i class="fas fa-file-invoice text-primary me-2"></i> Historial de Informes X / Z
+            </h4>
+
+            <form method="GET" class="row g-2">
+                <div class="col-md-2">
+                    <label class="small fw-bold text-secondary">Tipo</label>
+                    <select name="tipo" class="form-select form-select-sm">
+                        <option value="">-- Todos --</option>
+                        <option value="X" {% if tipo == 'X' %}selected{% endif %}>Informe X</option>
+                        <option value="Z" {% if tipo == 'Z' %}selected{% endif %}>Cierre Z</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="small fw-bold text-secondary">Sucursal</label>
+                    <select name="sucursal" class="form-select form-select-sm">
+                        <option value="">-- Todas --</option>
+                        {% for s in sucursales_disponibles %}
+                            <option value="{{ s.id }}" {% if sucursal_id == s.id|stringformat:"s" %}selected{% endif %}>{{ s.nombre }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="small fw-bold text-secondary">Desde</label>
+                    <input type="date" name="fecha_desde" class="form-control form-control-sm" value="{{ fecha_desde }}">
+                </div>
+                <div class="col-md-2">
+                    <label class="small fw-bold text-secondary">Hasta</label>
+                    <input type="date" name="fecha_hasta" class="form-control form-control-sm" value="{{ fecha_hasta }}">
+                </div>
+                <div class="col-md-3 d-flex align-items-end gap-1">
+                    <button type="submit" class="btn btn-sm btn-primary flex-grow-1">
+                        <i class="fas fa-search me-1"></i> Filtrar
+                    </button>
+                    <a href="{% url 'ventas:lista_informes' %}" class="btn btn-sm btn-outline-secondary">
+                        <i class="fas fa-undo"></i>
+                    </a>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="card border-0 shadow-sm">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-dark">
+                        <tr>
+                            <th class="ps-3">Tipo</th>
+                            <th>Nº</th>
+                            <th>Fecha</th>
+                            <th>Turno</th>
+                            <th>Cajero</th>
+                            <th>Sucursal</th>
+                            <th class="text-end">Total</th>
+                            <th class="text-center">Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for i in page_obj %}
+                        <tr>
+                            <td class="ps-3">
+                                {% if i.tipo == 'Z' %}
+                                    <span class="badge bg-danger">Z</span>
+                                {% else %}
+                                    <span class="badge bg-info text-dark">X</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ i.numero|default:"-" }}</td>
+                            <td class="small">{{ i.fecha_emision|date:"d/m/Y H:i" }}</td>
+                            <td class="small">#{{ i.turno.id }}</td>
+                            <td class="small">{{ i.turno.vendedor.get_full_name|default:i.turno.vendedor.username }}</td>
+                            <td class="small">{{ i.turno.sucursal.nombre|default:"-" }}</td>
+                            <td class="text-end fw-bold">${{ i.total_general|floatformat:2 }}</td>
+                            <td class="text-center">
+                                <a href="{% url 'ventas:imprimir_informe' i.id %}" class="btn btn-sm btn-outline-primary" target="_blank" title="Ver / Imprimir">
+                                    <i class="fas fa-print"></i>
+                                </a>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="8" class="text-center text-muted py-5">
+                                No hay informes con los filtros actuales.
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        {% if page_obj.has_other_pages %}
+        <div class="card-footer bg-body py-2">
+            <ul class="pagination pagination-sm mb-0 justify-content-center">
+                {% if page_obj.has_previous %}
+                    <li class="page-item"><a class="page-link" href="?page={{ page_obj.previous_page_number }}">&laquo;</a></li>
+                {% endif %}
+                <li class="page-item disabled"><span class="page-link">{{ page_obj.number }} / {{ page_obj.paginator.num_pages }}</span></li>
+                {% if page_obj.has_next %}
+                    <li class="page-item"><a class="page-link" href="?page={{ page_obj.next_page_number }}">&raquo;</a></li>
+                {% endif %}
+            </ul>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

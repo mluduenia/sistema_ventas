@@ -4,22 +4,40 @@ import os
 from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
 from functools import wraps
+
+from apps.configuracion.audit import registrar_log
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import get_user_model
-from django.contrib.auth.decorators import login_required
+from django.contrib.auth.decorators import login_required, user_passes_test
 from django.core.paginator import Paginator
 from django.db import transaction
-from django.db.models import Count, F, Q, Sum
+from django.db.models import (
+    Count,
+    DecimalField,
+    F,
+    Q,
+    Sum,
+)
+from django.db.models.functions import Coalesce, TruncDate
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_POST
 
-# Importaciones de apps locales (Corregido: apps.configuracion)
-from apps.configuracion.models import EmpresaConfig
-from apps.productos.models import MovimientoStock, Producto
-from .models import CajaTurno, Cliente, DetalleVenta, Venta, Pago, PerfilRepartidor
+# Apps locales
+from apps.configuracion.models import EmpresaConfig, Sucursal
+from apps.productos.models import Categoria, MovimientoStock, Producto
+from .models import (
+    CajaTurno,
+    Cliente,
+    DetalleVenta,
+    InformeCaja,
+    Pago,
+    PerfilRepartidor,
+    Venta,
+)
 
 logger = logging.getLogger(__name__)
 Usuario = get_user_model()
@@ -142,7 +160,7 @@ def buscar_producto_ajax(request):
                 precio_final = float(pp.precio)
 
         # Stock de la sucursal
-        stock_final = p.stock_actual  # fallback
+        stock_final = p.stock_actual  # fallback (stock global)
         if sucursal:
             ss = StockSucursal.objects.filter(
                 producto=p, sucursal=sucursal
@@ -164,65 +182,54 @@ def buscar_producto_ajax(request):
 @solo_no_repartidor
 def abrir_caja(request):
     """Pantalla para que el cajero entrante declare su Fondo de Caja."""
+    from apps.configuracion.models import Sucursal
+
     turno_existente = CajaTurno.objects.filter(vendedor=request.user, estado='ABIERTA').first()
     if turno_existente:
         return redirect('ventas:pos')
 
+    sucursal = getattr(request.user, 'sucursal', None)
+
+    if not sucursal:
+        sucursal = Sucursal.objects.filter(es_central=True, activa=True).first()
+        if not sucursal:
+            sucursal = Sucursal.objects.filter(activa=True).order_by('-es_central', 'nombre').first()
+
+    if not sucursal:
+        messages.error(
+            request,
+            'No hay sucursales cargadas en el sistema. Antes de abrir caja, '
+            'cargá al menos una sucursal en Configuración → Sucursales.'
+        )
+        return redirect('core:dashboard')
+
     if request.method == 'POST':
         monto_inicial = float(request.POST.get('monto_inicial', 0.0))
-        
-        CajaTurno.objects.create(
+
+        turno = CajaTurno.objects.create(
             vendedor=request.user,
+            sucursal=sucursal,
             monto_inicial=monto_inicial,
-            estado='ABIERTA'
+            estado='ABIERTA',
         )
+
+        registrar_log(
+            request,
+            accion='CAJA_ABRIR',
+            descripcion=f'Caja abierta - Turno #{turno.id} - Sucursal {sucursal.nombre} - Fondo ${monto_inicial}',
+            modelo='CajaTurno',
+            objeto_id=turno.id,
+            datos_despues={
+                'sucursal': sucursal.nombre,
+                'monto_inicial': monto_inicial,
+            },
+        )
+
         return redirect('ventas:pos')
 
-    return render(request, 'ventas/abrir_caja.html')
-
-
-@login_required
-@solo_no_repartidor
-def cerrar_caja(request):
-    """Pantalla de Arqueo y Relevo para el cajero saliente."""
-    turno_activo = CajaTurno.objects.filter(vendedor=request.user, estado='ABIERTA').first()
-    
-    if not turno_activo:
-        return redirect('ventas:abrir_caja')
-
-    ventas_turno = Venta.objects.filter(turno=turno_activo)
-    
-    total_efectivo = ventas_turno.filter(metodo_pago='EFECTIVO').aggregate(total=Sum('total'))['total'] or 0.0
-    total_debito = ventas_turno.filter(metodo_pago='TARJETA_DEBITO').aggregate(total=Sum('total'))['total'] or 0.0
-    total_credito = ventas_turno.filter(metodo_pago='TARJETA_CREDITO').aggregate(total=Sum('total'))['total'] or 0.0
-    total_mp = ventas_turno.filter(metodo_pago='TRANSFERENCIA').aggregate(total=Sum('total'))['total'] or 0.0
-
-    efectivo_esperado = float(turno_activo.monto_inicial) + float(total_efectivo)
-
-    if request.method == 'POST':
-        efectivo_contado = float(request.POST.get('monto_final_efectivo', 0.0))
-        observaciones = request.POST.get('observaciones', '')
-
-        diferencia = efectivo_contado - efectivo_esperado
-
-        turno_activo.monto_final_efectivo = efectivo_contado
-        turno_activo.fecha_cierre = timezone.now()
-        turno_activo.diferencia = diferencia
-        turno_activo.observaciones = observaciones
-        turno_activo.estado = 'CERRADA'
-        turno_activo.save()
-
-        return redirect('usuarios:logout')
-
-    context = {
-        'turno': turno_activo,
-        'total_efectivo': total_efectivo,
-        'total_debito': total_debito,
-        'total_credito': total_credito,
-        'total_mp': total_mp,
-        'efectivo_esperado': efectivo_esperado,
-    }
-    return render(request, 'ventas/cerrar_caja.html', context)
+    return render(request, 'ventas/abrir_caja.html', {
+        'sucursal_asignada': sucursal,
+    })
 
 
 @login_required
@@ -395,6 +402,22 @@ def procesar_venta_ajax(request):
             estado_cobro=estado_cobro_val,
             saldo_pendiente=saldo_pendiente,
         )
+        # 🔽 AGREGAR ESTAS LÍNEAS
+        registrar_log(
+            request,
+            accion='VENTA',
+            descripcion=f'Venta #{venta.id} - ${total_venta} - {venta.get_estado_display()} - {metodo_pago}',
+            modelo='Venta',
+            objeto_id=venta.id,
+            datos_despues={
+                'total': float(total_venta),
+                'metodo_pago': metodo_pago,
+                'estado': venta.estado,
+                'cliente': cliente_obj.nombre if cliente_obj else 'Consumidor Final',
+                'items': len(items),
+                'cae': venta.cae if venta.cae else None,
+            },
+        )
 
         # 9. Crear Detalles de Venta
         for det in detalles_a_crear:
@@ -411,21 +434,21 @@ def procesar_venta_ajax(request):
 
             # 🔽 SOLO descontar stock si NO viene desde remitos
             if not desde_remitos:
-                # Descontar stock
                 from apps.productos.models import StockSucursal
 
                 # Stock global (compatibilidad)
                 prod.stock_actual -= cant
                 prod.save()
 
-                # Stock por sucursal
-                ss, _ = StockSucursal.objects.get_or_create(
-                    producto=prod,
-                    sucursal=turno_activo.sucursal,
-                    defaults={'cantidad': 0}
-                )
-                ss.cantidad -= cant
-                ss.save()
+                # Stock por sucursal (solo si el turno tiene sucursal)
+                if turno_activo.sucursal_id:
+                    ss, _ = StockSucursal.objects.get_or_create(
+                        producto=prod,
+                        sucursal_id=turno_activo.sucursal_id,
+                        defaults={'cantidad': 0}
+                    )
+                    ss.cantidad -= cant
+                    ss.save()
 
                 motivo_movimiento = f'Venta POS #{venta.id} [{estado_venta}]'
                 if repartidor_obj:
@@ -433,7 +456,7 @@ def procesar_venta_ajax(request):
 
                 MovimientoStock.objects.create(
                     producto=prod,
-                    sucursal=turno_activo.sucursal,   # 🔽 NUEVO
+                    sucursal=turno_activo.sucursal,
                     tipo='VENTA',
                     cantidad=cant,
                     motivo=motivo_movimiento
@@ -629,9 +652,19 @@ def crear_cliente(request):
             cliente_existente.direccion = direccion
             cliente_existente.condicion_iva = condicion_iva
             cliente_existente.save()
+
+            registrar_log(
+                request,
+                accion='UPDATE',
+                descripcion=f'Cliente actualizado: {nombre} (CUIT/DNI: {cuit_dni})',
+                modelo='Cliente',
+                objeto_id=cliente_existente.id,
+                datos_despues={'nombre': nombre, 'documento': cuit_dni},
+            )
+
             messages.success(request, f'Cliente "{nombre}" ya existía. Se actualizaron sus datos.')
         else:
-            Cliente.objects.create(
+            nuevo = Cliente.objects.create(
                 nombre=nombre,
                 numero_documento=cuit_dni,
                 condicion_iva=condicion_iva,
@@ -639,6 +672,16 @@ def crear_cliente(request):
                 email=email,
                 direccion=direccion
             )
+
+            registrar_log(
+                request,
+                accion='CREATE',
+                descripcion=f'Cliente creado: {nombre} (CUIT/DNI: {cuit_dni})',
+                modelo='Cliente',
+                objeto_id=nuevo.id,
+                datos_despues={'nombre': nombre, 'documento': cuit_dni},
+            )
+
             messages.success(request, 'Cliente registrado correctamente.')
 
         next_url = request.GET.get('next') or request.POST.get('next') or 'ventas:pos'
@@ -680,24 +723,88 @@ def enviar_email_comprobante(request, venta_id):
 @login_required
 @solo_no_repartidor
 def reportes_view(request):
-    from datetime import datetime, date
+    from django.db.models import Sum, Count, F, Q
+    from django.db.models.functions import TruncDate
+    from decimal import Decimal
+    from apps.configuracion.models import Sucursal, EmpresaConfig
+    from apps.productos.models import Categoria
 
     hoy = timezone.now()
 
-    # 🔽 Leer filtros
+    # ============================================================
+    # FILTROS
+    # ============================================================
     mes_sel = request.GET.get('mes', '')
     anio_sel = request.GET.get('anio', '')
     fecha_desde = request.GET.get('fecha_desde', '').strip()
     fecha_hasta = request.GET.get('fecha_hasta', '').strip()
-    modo = request.GET.get('modo', 'mes')  # 'mes' o 'rango'
+    modo = request.GET.get('modo', 'mes')
+    sucursal_id = request.GET.get('sucursal', '').strip()
+    vendedor_id = request.GET.get('vendedor', '').strip()
+    categoria_id = request.GET.get('categoria', '').strip()
 
-    # Base: todas las ventas
-    ventas_periodo = Venta.objects.all()
-    detalles_periodo = DetalleVenta.objects.all()
+    # ============================================================
+    # MÓDULOS ACTIVOS
+    # ============================================================
+    config = EmpresaConfig.objects.first()
+    multi_sucursal = config.modulo_multi_sucursal if config else False
+    tiene_cc = config.modulo_cuenta_corriente if config else True
 
+    # ============================================================
+    # PERMISOS
+    # ============================================================
+    es_admin = (
+        request.user.is_superuser or
+        getattr(request.user, 'rol', '') in ('vendedor', 'gerente')
+    )
+
+    # Sucursales disponibles para el filtro
+    if multi_sucursal:
+        if es_admin:
+            sucursales_disponibles = Sucursal.objects.filter(activa=True).order_by('-es_central', 'nombre')
+        elif getattr(request.user, 'sucursal_id', None):
+            sucursales_disponibles = Sucursal.objects.filter(id=request.user.sucursal_id)
+        else:
+            sucursales_disponibles = Sucursal.objects.none()
+    else:
+        sucursales_disponibles = Sucursal.objects.none()
+
+    # Vendedores para el filtro
+    vendedores_disponibles = Usuario.objects.filter(
+        rol__in=['vendedor', 'gerente', 'cajero'],
+        activo=True,
+    ).order_by('first_name', 'username')
+
+    # Categorías para el filtro
+    categorias_disponibles = Categoria.objects.all().order_by('nombre')
+
+    # ============================================================
+    # BASE
+    # ============================================================
+    ventas_periodo = Venta.objects.filter(es_nota_credito=False).exclude(estado='CANCELADO')
+    detalles_periodo = DetalleVenta.objects.filter(venta__es_nota_credito=False).exclude(venta__estado='CANCELADO')
+
+    # Forzar sucursal si no es admin
+    if not es_admin and getattr(request.user, 'sucursal_id', None):
+        sucursal_id = str(request.user.sucursal_id)
+
+    if sucursal_id:
+        ventas_periodo = ventas_periodo.filter(sucursal_id=sucursal_id)
+        detalles_periodo = detalles_periodo.filter(venta__sucursal_id=sucursal_id)
+
+    if vendedor_id:
+        ventas_periodo = ventas_periodo.filter(vendedor_id=vendedor_id)
+        detalles_periodo = detalles_periodo.filter(venta__vendedor_id=vendedor_id)
+
+    if categoria_id:
+        detalles_periodo = detalles_periodo.filter(producto__categoria_id=categoria_id)
+        ventas_periodo = ventas_periodo.filter(detalles__producto__categoria_id=categoria_id).distinct()
+
+    # ============================================================
+    # FILTRO DE FECHA
+    # ============================================================
     rango_descripcion = ""
 
-    # 🔽 Modo 1: Por rango de fechas
     if modo == 'rango' and (fecha_desde or fecha_hasta):
         if fecha_desde:
             ventas_periodo = ventas_periodo.filter(fecha__date__gte=fecha_desde)
@@ -705,12 +812,9 @@ def reportes_view(request):
         if fecha_hasta:
             ventas_periodo = ventas_periodo.filter(fecha__date__lte=fecha_hasta)
             detalles_periodo = detalles_periodo.filter(venta__fecha__date__lte=fecha_hasta)
-
         rango_descripcion = f"Desde {fecha_desde or 'inicio'} hasta {fecha_hasta or 'hoy'}"
         mes_sel = ''
         anio_sel = ''
-
-    # 🔽 Modo 2: Por mes y año (comportamiento original)
     else:
         try:
             mes_sel = int(mes_sel) if mes_sel else hoy.month
@@ -724,51 +828,169 @@ def reportes_view(request):
             venta__fecha__month=mes_sel,
             venta__fecha__year=anio_sel,
         )
-        rango_descripcion = f"{mes_sel}/{anio_sel}"
+        rango_descripcion = f"{mes_sel:02d}/{anio_sel}"
 
-    # 1. TOTALES DEL PERÍODO Y GANANCIA REAL
-    total_recaudado = ventas_periodo.aggregate(Sum('total'))['total__sum'] or 0
+    # ============================================================
+    # KPIs PRINCIPALES
+    # ============================================================
+    total_recaudado = ventas_periodo.aggregate(t=Sum('total'))['t'] or Decimal('0.00')
     total_operaciones = ventas_periodo.count()
 
     ganancia_real = detalles_periodo.aggregate(
-        ganancia=Sum(F('cantidad') * (F('precio_unitario') - F('producto__precio_costo')))
-    )['ganancia'] or 0
+        g=Sum(F('cantidad') * (F('precio_unitario') - F('producto__precio_costo')))
+    )['g'] or Decimal('0.00')
 
-    margen_porcentaje = (ganancia_real / total_recaudado * 100) if total_recaudado > 0 else 0
-    ticket_promedio = (total_recaudado / total_operaciones) if total_operaciones > 0 else 0
+    margen_porcentaje = (ganancia_real / total_recaudado * 100) if total_recaudado > 0 else Decimal('0.00')
+    ticket_promedio = (total_recaudado / total_operaciones) if total_operaciones > 0 else Decimal('0.00')
 
-    # 2. DESGLOSE POR MEDIOS DE PAGO
+    # ============================================================
+    # MEDIOS DE PAGO
+    # ============================================================
     medios_pago = ventas_periodo.values('metodo_pago').annotate(
         total=Sum('total'),
-        cantidad=Count('id')
+        cantidad=Count('id'),
     ).order_by('-total')
 
-    # 3. TOP PRODUCTOS
+    # ============================================================
+    # PRODUCTOS TOP
+    # ============================================================
     productos_top = detalles_periodo.values(
-        'producto__nombre', 'producto__codigo_barra'
+        'producto__id', 'producto__nombre', 'producto__codigo_barra',
     ).annotate(
         unidades=Sum('cantidad'),
-        recaudado=Sum(F('cantidad') * F('precio_unitario'))
-    ).order_by('-unidades')[:5]
+        recaudado=Sum(F('cantidad') * F('precio_unitario')),
+    ).order_by('-unidades')[:15]
 
-    # 4. RANKING DE VENDEDORES
-    vendedores_top = ventas_periodo.values(
-        'vendedor__username'
+    # ============================================================
+    # VENDEDORES
+    # ============================================================
+    vendedores_top_qs = ventas_periodo.values(
+        'vendedor__id', 'vendedor__username',
+        'vendedor__first_name', 'vendedor__last_name',
     ).annotate(
         ventas_count=Count('id'),
-        total_monto=Sum('total')
+        total_monto=Sum('total'),
     ).order_by('-total_monto')
 
-    # 5. PROVEEDORES MÁS DEMANDADOS
+    vendedores_top = list(vendedores_top_qs)
+    for v in vendedores_top:
+        v['nombre'] = (
+            f"{v.get('vendedor__first_name', '')} {v.get('vendedor__last_name', '')}".strip()
+            or v.get('vendedor__username') or 'Caja General'
+        )
+
+    # ============================================================
+    # PROVEEDORES TOP
+    # ============================================================
     proveedores_top = detalles_periodo.filter(
         producto__proveedor__isnull=False
     ).values(
-        'producto__proveedor__nombre_o_razon_social'
+        'producto__proveedor__id',
+        'producto__proveedor__nombre_o_razon_social',
     ).annotate(
         unidades_vendidas=Sum('cantidad'),
-        total_generado=Sum(F('cantidad') * F('precio_unitario'))
-    ).order_by('-unidades_vendidas')[:5]
+        total_generado=Sum(F('cantidad') * F('precio_unitario')),
+    ).order_by('-unidades_vendidas')[:15]
 
+    # ============================================================
+    # POR SUCURSAL
+    # ============================================================
+    sucursales_stats = []
+    if multi_sucursal:
+        sucursales_qs = Sucursal.objects.filter(activa=True).order_by('-es_central', 'nombre')
+        if not es_admin and getattr(request.user, 'sucursal_id', None):
+            sucursales_qs = sucursales_qs.filter(id=request.user.sucursal_id)
+
+        for suc in sucursales_qs:
+            v_suc = Venta.objects.filter(sucursal=suc, es_nota_credito=False).exclude(estado='CANCELADO')
+            d_suc = DetalleVenta.objects.filter(venta__sucursal=suc, venta__es_nota_credito=False).exclude(venta__estado='CANCELADO')
+
+            if modo == 'rango' and (fecha_desde or fecha_hasta):
+                if fecha_desde:
+                    v_suc = v_suc.filter(fecha__date__gte=fecha_desde)
+                    d_suc = d_suc.filter(venta__fecha__date__gte=fecha_desde)
+                if fecha_hasta:
+                    v_suc = v_suc.filter(fecha__date__lte=fecha_hasta)
+                    d_suc = d_suc.filter(venta__fecha__date__lte=fecha_hasta)
+            else:
+                v_suc = v_suc.filter(fecha__month=mes_sel, fecha__year=anio_sel)
+                d_suc = d_suc.filter(venta__fecha__month=mes_sel, venta__fecha__year=anio_sel)
+
+            total_suc = v_suc.aggregate(t=Sum('total'))['t'] or Decimal('0.00')
+            cant_suc = v_suc.count()
+            gan_suc = d_suc.aggregate(
+                g=Sum(F('cantidad') * (F('precio_unitario') - F('producto__precio_costo')))
+            )['g'] or Decimal('0.00')
+
+            sucursales_stats.append({
+                'sucursal': suc,
+                'total': total_suc,
+                'cantidad': cant_suc,
+                'ganancia': gan_suc,
+                'ticket_promedio': (total_suc / cant_suc) if cant_suc > 0 else Decimal('0.00'),
+            })
+
+        sucursales_stats.sort(key=lambda x: x['total'], reverse=True)
+
+    # ============================================================
+    # POR CATEGORÍA
+    # ============================================================
+    categorias_stats = detalles_periodo.values(
+        'producto__categoria__id',
+        'producto__categoria__nombre',
+    ).annotate(
+        unidades=Sum('cantidad'),
+        recaudado=Sum(F('cantidad') * F('precio_unitario')),
+        ganancia=Sum(F('cantidad') * (F('precio_unitario') - F('producto__precio_costo'))),
+    ).order_by('-recaudado')
+
+    # ============================================================
+    # VENTAS POR DÍA
+    # ============================================================
+    ventas_por_dia_qs = ventas_periodo.annotate(
+        dia=TruncDate('fecha')
+    ).values('dia').annotate(
+        total=Sum('total'),
+        cantidad=Count('id'),
+    ).order_by('dia')
+
+    ventas_por_dia = list(ventas_por_dia_qs)
+    max_dia = max([v['total'] for v in ventas_por_dia], default=Decimal('0.00'))
+    for v in ventas_por_dia:
+        v['porcentaje'] = float(v['total'] / max_dia * 100) if max_dia > 0 else 0
+
+    # ============================================================
+    # CUENTAS CORRIENTES
+    # ============================================================
+    cc_stats = {}
+    if tiene_cc and es_admin:
+        ventas_pendientes = Venta.objects.filter(
+            estado_cobro__in=['PENDIENTE', 'PARCIAL'],
+            es_nota_credito=False,
+        ).exclude(estado='CANCELADO')
+
+        if sucursal_id:
+            ventas_pendientes = ventas_pendientes.filter(sucursal_id=sucursal_id)
+
+        cc_stats['total_deuda'] = ventas_pendientes.aggregate(
+            t=Sum('saldo_pendiente')
+        )['t'] or Decimal('0.00')
+        cc_stats['cantidad_comprobantes'] = ventas_pendientes.count()
+        cc_stats['clientes_con_deuda'] = ventas_pendientes.filter(
+            cliente__isnull=False
+        ).values('cliente').distinct().count()
+        cc_stats['top_deudores'] = ventas_pendientes.filter(
+            cliente__isnull=False
+        ).values(
+            'cliente__id', 'cliente__nombre', 'cliente__numero_documento',
+        ).annotate(
+            deuda=Sum('saldo_pendiente'),
+            cantidad=Count('id'),
+        ).order_by('-deuda')[:10]
+
+    # ============================================================
+    # CONTEXTO
+    # ============================================================
     context = {
         'mes_sel': mes_sel,
         'anio_sel': anio_sel,
@@ -776,16 +998,34 @@ def reportes_view(request):
         'fecha_hasta': fecha_hasta,
         'modo': modo,
         'rango_descripcion': rango_descripcion,
+        'sucursal_id': sucursal_id,
+        'vendedor_id': vendedor_id,
+        'categoria_id': categoria_id,
+
+        'sucursales_disponibles': sucursales_disponibles,
+        'vendedores_disponibles': vendedores_disponibles,
+        'categorias_disponibles': categorias_disponibles,
         'anios_disponibles': range(hoy.year, 2023, -1),
+
+        'es_admin': es_admin,
+        'multi_sucursal': multi_sucursal,
+        'tiene_cc': tiene_cc,
+
         'total_recaudado': total_recaudado,
         'total_operaciones': total_operaciones,
         'ganancia_real': ganancia_real,
         'margen_porcentaje': margen_porcentaje,
         'ticket_promedio': ticket_promedio,
+
         'medios_pago': medios_pago,
         'productos_top': productos_top,
         'vendedores_top': vendedores_top,
         'proveedores_top': proveedores_top,
+
+        'sucursales_stats': sucursales_stats,
+        'categorias_stats': categorias_stats,
+        'ventas_por_dia': ventas_por_dia,
+        'cc_stats': cc_stats,
     }
     return render(request, 'ventas/reportes.html', context)
 
@@ -1087,7 +1327,16 @@ def anular_venta_ajax(request, venta_id):
             # Marcar la venta original como cancelada
             venta_original.estado = 'CANCELADO'
             venta_original.save()
-
+            registrar_log(
+            request,
+            accion='ANULAR',
+            descripcion=f'Venta #{venta_original.id} anulada - NC #{nc.id} - ${venta_original.total}',
+            modelo='Venta',
+            objeto_id=venta_original.id,
+            nivel='WARNING',
+            datos_antes={'estado': 'COMPLETADO'},
+            datos_despues={'estado': 'CANCELADO', 'nc_id': nc.id},
+        )
         return JsonResponse({
             'success': True,
             'message': 'Nota de Crédito emitida correctamente.',
@@ -1533,11 +1782,12 @@ def cuenta_corriente_cliente_view(request, cliente_id):
 @login_required
 @solo_no_repartidor
 def lista_repartidores_view(request):
-    """Lista todos los repartidores con sus datos."""
+    """Lista todos los repartidores con sus datos. Incluye dados de baja si se filtra."""
     from django.db.models import Q
 
     busqueda = request.GET.get('q', '').strip()
-    filtro_activo = request.GET.get('activo', '1')  # por defecto, solo activos
+    # '1' = solo activos, '0' = solo inactivos, 'todos' = todos
+    filtro_estado = request.GET.get('estado', '1')
 
     perfiles = PerfilRepartidor.objects.select_related('user').all()
 
@@ -1551,16 +1801,22 @@ def lista_repartidores_view(request):
             Q(vehiculo__icontains=busqueda)
         )
 
-    if filtro_activo == '1':
+    if filtro_estado == '1':
         perfiles = perfiles.filter(activo=True)
+    elif filtro_estado == '0':
+        perfiles = perfiles.filter(activo=False)
 
-    perfiles = perfiles.order_by('user__first_name', 'user__last_name', 'user__username')
+    perfiles = perfiles.order_by('-activo', 'user__first_name', 'user__last_name', 'user__username')
 
     context = {
         'repartidores': perfiles,
         'busqueda': busqueda,
-        'filtro_activo': filtro_activo,
+        'filtro_estado': filtro_estado,
         'total': perfiles.count(),
+        'es_admin': (
+            request.user.is_superuser or
+            request.user.groups.filter(name='Administrador').exists()
+        ),
     }
     return render(request, 'ventas/lista_repartidores.html', context)
 
@@ -1740,3 +1996,513 @@ def marcar_entregado_admin_ajax(request, venta_id):
     except Exception as e:
         logger.exception(f"Error marcando entregado venta {venta_id}")
         return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
+
+# =========================================================
+# BAJA / REACTIVACIÓN DE REPARTIDORES (soft delete)
+# =========================================================
+
+def solo_admin_o_super(view_func):
+    """Solo superuser o grupo Administrador pueden dar de baja/reactivar."""
+    @wraps(view_func)
+    def _wrapped(request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return redirect('usuarios:login')
+        es_admin = (
+            request.user.is_superuser or
+            request.user.groups.filter(name='Administrador').exists()
+        )
+        if not es_admin:
+            messages.error(request, 'No tenés permisos para esta acción.')
+            return redirect('ventas:lista_repartidores')
+        return view_func(request, *args, **kwargs)
+    return _wrapped
+
+
+@login_required
+@solo_admin_o_super
+@csrf_exempt
+def dar_baja_repartidor_view(request, repartidor_id):
+    """
+    Da de baja a un repartidor (soft delete).
+    NO lo elimina: conserva User + PerfilRepartidor para historial.
+    """
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'Método no permitido.'}, status=405)
+
+    perfil = get_object_or_404(PerfilRepartidor, id=repartidor_id)
+    user = perfil.user
+
+    if not perfil.activo:
+        return JsonResponse({'success': False, 'error': 'El repartidor ya está dado de baja.'})
+
+    try:
+        with transaction.atomic():
+            perfil.activo = False
+            perfil.fecha_baja = timezone.now()
+            perfil.save()
+
+            # Bloquear login, pero NO borrar
+            user.is_active = False
+            user.save()
+
+        logger.info(f"Repartidor {user.username} (ID {perfil.id}) dado de baja por {request.user.username}")
+        registrar_log(
+            request,
+            accion='BAJA',
+            descripcion=f'Repartidor {user.username} ({user.get_full_name() or user.username}) dado de baja',
+            modelo='PerfilRepartidor',
+            objeto_id=perfil.id,
+            nivel='WARNING',
+        )
+        return JsonResponse({
+            'success': True,
+            'message': f'Repartidor "{user.get_full_name() or user.username}" dado de baja correctamente.',
+        })
+    except Exception as e:
+        logger.exception(f"Error dando de baja repartidor {repartidor_id}")
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@login_required
+@solo_admin_o_super
+@csrf_exempt
+def reactivar_repartidor_view(request, repartidor_id):
+    """Reactiva un repartidor previamente dado de baja."""
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'Método no permitido.'}, status=405)
+
+    perfil = get_object_or_404(PerfilRepartidor, id=repartidor_id)
+    user = perfil.user
+
+    if perfil.activo:
+        return JsonResponse({'success': False, 'error': 'El repartidor ya está activo.'})
+
+    try:
+        with transaction.atomic():
+            perfil.activo = True
+            perfil.fecha_baja = None
+            perfil.save()
+
+            user.is_active = True
+            user.save()
+
+        logger.info(f"Repartidor {user.username} (ID {perfil.id}) reactivado por {request.user.username}")
+        registrar_log(
+            request,
+            accion='REACTIVAR',
+            descripcion=f'Repartidor {user.username} ({user.get_full_name() or user.username}) reactivado',
+            modelo='PerfilRepartidor',
+            objeto_id=perfil.id,
+        )
+        return JsonResponse({
+            'success': True,
+            'message': f'Repartidor "{user.get_full_name() or user.username}" reactivado correctamente.',
+        })
+    except Exception as e:
+        logger.exception(f"Error reactivando repartidor {repartidor_id}")
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+# =========================================================
+# LISTADO Y FICHA DE CLIENTES
+# =========================================================
+
+@login_required
+@solo_no_repartidor
+def lista_clientes_view(request):
+    """
+    Lista todos los clientes con KPIs: total comprado, ventas, saldo, última compra.
+    Permite filtrar por búsqueda, con/sin deuda, activos/inactivos.
+    """
+    from django.db.models import Sum, Count, Max, Q, DecimalField
+    from django.db.models.functions import Coalesce
+    from decimal import Decimal
+
+    busqueda = request.GET.get('q', '').strip()
+    filtro_deuda = request.GET.get('con_deuda', '')   # '1' = solo con deuda
+    orden = request.GET.get('orden', 'nombre')         # nombre, saldo, total, ultima
+
+    clientes = Cliente.objects.all()
+
+    # Búsqueda
+    if busqueda:
+        clientes = clientes.filter(
+            Q(nombre__icontains=busqueda) |
+            Q(numero_documento__icontains=busqueda) |
+            Q(telefono__icontains=busqueda) |
+            Q(email__icontains=busqueda) |
+            Q(localidad__icontains=busqueda)
+        )
+
+    # Anotaciones (KPIs por cliente)
+    clientes = clientes.annotate(
+        # Total facturado (excluyendo remitos y notas de crédito)
+        total_comprado=Coalesce(
+            Sum(
+                'ventas__total',
+                filter=Q(
+                    ventas__es_remito=False,
+                    ventas__es_nota_credito=False,
+                    ventas__estado__in=['COMPLETADO', 'ENTREGADO'],
+                )
+            ),
+            Decimal('0.00'),
+            output_field=DecimalField(max_digits=12, decimal_places=2)
+        ),
+        # Cantidad de ventas
+        cantidad_ventas=Count(
+            'ventas',
+            filter=Q(
+                ventas__es_remito=False,
+                ventas__es_nota_credito=False,
+                ventas__estado__in=['COMPLETADO', 'ENTREGADO'],
+            ),
+            distinct=True
+        ),
+        # Saldo pendiente (cuenta corriente)
+        saldo_total=Coalesce(
+            Sum(
+                'ventas__saldo_pendiente',
+                filter=Q(
+                    ventas__estado_cobro__in=['PENDIENTE', 'PARCIAL'],
+                    ventas__es_nota_credito=False,
+                    ventas__estado__in=['COMPLETADO', 'ENTREGADO', 'PENDIENTE_ENTREGA'],
+                )
+            ),
+            Decimal('0.00'),
+            output_field=DecimalField(max_digits=12, decimal_places=2)
+        ),
+        # Cantidad de comprobantes pendientes
+        pendientes_count=Count(
+            'ventas',
+            filter=Q(
+                ventas__estado_cobro__in=['PENDIENTE', 'PARCIAL'],
+                ventas__es_nota_credito=False,
+            ),
+            distinct=True
+        ),
+        # Fecha de última compra
+        ultima_compra=Max(
+            'ventas__fecha',
+            filter=Q(ventas__es_nota_credito=False)
+        ),
+    )
+
+    # Filtro "solo con deuda"
+    if filtro_deuda == '1':
+        clientes = clientes.filter(saldo_total__gt=0)
+
+    # Ordenamiento
+    if orden == 'saldo':
+        clientes = clientes.order_by('-saldo_total', 'nombre')
+    elif orden == 'total':
+        clientes = clientes.order_by('-total_comprado', 'nombre')
+    elif orden == 'ultima':
+        clientes = clientes.order_by('-ultima_compra', 'nombre')
+    else:
+        clientes = clientes.order_by('nombre')
+
+    # KPIs globales
+    total_clientes = Cliente.objects.count()
+    clientes_con_deuda = Cliente.objects.filter(
+        ventas__estado_cobro__in=['PENDIENTE', 'PARCIAL'],
+        ventas__es_nota_credito=False,
+    ).distinct().count()
+
+    deuda_total = Venta.objects.filter(
+        estado_cobro__in=['PENDIENTE', 'PARCIAL'],
+        es_nota_credito=False,
+        estado__in=['COMPLETADO', 'ENTREGADO', 'PENDIENTE_ENTREGA'],
+    ).aggregate(t=Sum('saldo_pendiente'))['t'] or Decimal('0.00')
+
+    # Paginación
+    paginator = Paginator(clientes, 25)
+    page_obj = paginator.get_page(request.GET.get('page'))
+
+    context = {
+        'page_obj': page_obj,
+        'busqueda': busqueda,
+        'filtro_deuda': filtro_deuda,
+        'orden': orden,
+        'total_clientes': total_clientes,
+        'clientes_con_deuda': clientes_con_deuda,
+        'deuda_total': deuda_total,
+    }
+    return render(request, 'ventas/lista_clientes.html', context)
+
+
+@login_required
+@solo_no_repartidor
+def ficha_cliente_view(request, cliente_id):
+    """
+    Ficha completa de un cliente:
+    - Datos personales
+    - KPIs (total comprado, ventas, saldo, ticket promedio)
+    - Historial de compras (últimas 20)
+    - Historial de pagos (últimos 20)
+    - Productos más comprados
+    """
+    from django.db.models import Sum, Count, F, DecimalField
+    from django.db.models.functions import Coalesce
+    from decimal import Decimal
+
+    cliente = get_object_or_404(Cliente, id=cliente_id)
+
+    # === KPIs ===
+    ventas_validas = Venta.objects.filter(
+        cliente=cliente,
+        es_nota_credito=False,
+        estado__in=['COMPLETADO', 'ENTREGADO', 'PENDIENTE_ENTREGA'],
+    )
+
+    total_comprado = ventas_validas.filter(
+        es_remito=False
+    ).aggregate(t=Sum('total'))['t'] or Decimal('0.00')
+
+    cantidad_ventas = ventas_validas.filter(es_remito=False).count()
+
+    saldo_pendiente = ventas_validas.filter(
+        estado_cobro__in=['PENDIENTE', 'PARCIAL']
+    ).aggregate(t=Sum('saldo_pendiente'))['t'] or Decimal('0.00')
+
+    ticket_promedio = (
+        total_comprado / cantidad_ventas if cantidad_ventas > 0 else Decimal('0.00')
+    )
+
+    # === Historial de compras ===
+    historial_compras = Venta.objects.filter(
+        cliente=cliente,
+        es_nota_credito=False,
+    ).select_related('vendedor', 'sucursal').order_by('-fecha')[:20]
+
+    # === Historial de pagos ===
+    historial_pagos = Pago.objects.filter(
+        cliente=cliente,
+    ).select_related('registrado_por', 'factura').order_by('-fecha')[:20]
+
+    # === Productos más comprados ===
+    productos_top = DetalleVenta.objects.filter(
+        venta__cliente=cliente,
+        venta__es_nota_credito=False,
+        venta__estado__in=['COMPLETADO', 'ENTREGADO'],
+    ).values(
+        'producto__nombre', 'producto__codigo_barra'
+    ).annotate(
+        unidades=Sum('cantidad'),
+        recaudado=Sum(F('cantidad') * F('precio_unitario'))
+    ).order_by('-unidades')[:10]
+
+    # === Comprobantes pendientes (para cobrar) ===
+    pendientes = Venta.objects.filter(
+        cliente=cliente,
+        es_nota_credito=False,
+        estado_cobro__in=['PENDIENTE', 'PARCIAL'],
+    ).exclude(
+        estado='CANCELADO'
+    ).order_by('fecha')
+
+    context = {
+        'cliente': cliente,
+        'total_comprado': total_comprado,
+        'cantidad_ventas': cantidad_ventas,
+        'saldo_pendiente': saldo_pendiente,
+        'ticket_promedio': ticket_promedio,
+        'historial_compras': historial_compras,
+        'historial_pagos': historial_pagos,
+        'productos_top': productos_top,
+        'pendientes': pendientes,
+    }
+    return render(request, 'ventas/ficha_cliente.html', context)
+
+@login_required
+@solo_no_repartidor
+def informe_x_view(request):
+    """
+    Emite un Informe X (parcial) del turno activo.
+    NO cierra la caja ni reinicia contadores. Se puede emitir varias veces.
+    """
+    turno_activo = CajaTurno.objects.filter(
+        vendedor=request.user, estado='ABIERTA'
+    ).select_related('sucursal').first()
+
+    if not turno_activo:
+        messages.error(request, 'No tenés una caja abierta.')
+        return redirect('ventas:abrir_caja')
+
+    ventas_turno = Venta.objects.filter(
+        turno=turno_activo,
+        es_nota_credito=False,
+    ).exclude(estado='CANCELADO')
+
+    total_efectivo = ventas_turno.filter(metodo_pago='EFECTIVO').aggregate(t=Sum('total'))['t'] or 0
+    total_debito = ventas_turno.filter(metodo_pago='TARJETA_DEBITO').aggregate(t=Sum('total'))['t'] or 0
+    total_credito = ventas_turno.filter(metodo_pago='TARJETA_CREDITO').aggregate(t=Sum('total'))['t'] or 0
+    total_transf = ventas_turno.filter(metodo_pago='TRANSFERENCIA').aggregate(t=Sum('total'))['t'] or 0
+    total_general = total_efectivo + total_debito + total_credito + total_transf
+    cantidad = ventas_turno.count()
+
+    informe = InformeCaja.objects.create(
+        turno=turno_activo,
+        tipo='X',
+        emitido_por=request.user,
+        total_efectivo=total_efectivo,
+        total_debito=total_debito,
+        total_credito=total_credito,
+        total_transferencia=total_transf,
+        total_general=total_general,
+        cantidad_operaciones=cantidad,
+    )
+
+    registrar_log(
+        request,
+        accion='INFO_X',
+        descripcion=f'Informe X emitido - Turno #{turno_activo.id} - Total ${total_general}',
+        modelo='InformeCaja',
+        objeto_id=informe.id,
+        datos_despues={
+            'total_general': float(total_general),
+            'cantidad_operaciones': cantidad,
+        },
+    )
+
+    return redirect('ventas:imprimir_informe', informe_id=informe.id)
+
+@login_required
+@solo_no_repartidor
+def imprimir_informe_view(request, informe_id):
+    """Renderiza el informe X o Z para imprimir."""
+    from apps.configuracion.models import EmpresaConfig
+    informe = get_object_or_404(InformeCaja, id=informe_id)
+    config = EmpresaConfig.objects.first()
+
+    template = 'ventas/informe_z.html' if informe.tipo == 'Z' else 'ventas/informe_x.html'
+    return render(request, template, {'informe': informe, 'config': config})
+
+@login_required
+@solo_no_repartidor
+def lista_informes_view(request):
+    """Historial de todos los informes X y Z emitidos."""
+    from apps.configuracion.models import Sucursal
+
+    tipo = request.GET.get('tipo', '').strip()
+    sucursal_id = request.GET.get('sucursal', '').strip()
+    fecha_desde = request.GET.get('fecha_desde', '').strip()
+    fecha_hasta = request.GET.get('fecha_hasta', '').strip()
+
+    informes = InformeCaja.objects.select_related(
+        'turno', 'turno__vendedor', 'turno__sucursal', 'emitido_por'
+    ).all()
+
+    if tipo:
+        informes = informes.filter(tipo=tipo)
+    if sucursal_id:
+        informes = informes.filter(turno__sucursal_id=sucursal_id)
+    if fecha_desde:
+        informes = informes.filter(fecha_emision__date__gte=fecha_desde)
+    if fecha_hasta:
+        informes = informes.filter(fecha_emision__date__lte=fecha_hasta)
+
+    informes = informes.order_by('-fecha_emision')
+
+    paginator = Paginator(informes, 25)
+    page_obj = paginator.get_page(request.GET.get('page'))
+
+    return render(request, 'ventas/lista_informes.html', {
+        'page_obj': page_obj,
+        'tipo': tipo,
+        'sucursal_id': sucursal_id,
+        'fecha_desde': fecha_desde,
+        'fecha_hasta': fecha_hasta,
+        'sucursales_disponibles': Sucursal.objects.filter(activa=True).order_by('-es_central', 'nombre'),
+    })
+
+@login_required
+@solo_no_repartidor
+def cerrar_caja(request):
+    """Pantalla de Arqueo y Relevo para el cajero saliente. Emite Z al cerrar."""
+    turno_activo = CajaTurno.objects.filter(
+        vendedor=request.user, estado='ABIERTA'
+    ).select_related('sucursal').first()
+
+    if not turno_activo:
+        return redirect('ventas:abrir_caja')
+
+    ventas_turno = Venta.objects.filter(
+        turno=turno_activo, es_nota_credito=False
+    ).exclude(estado='CANCELADO')
+
+    total_efectivo = ventas_turno.filter(metodo_pago='EFECTIVO').aggregate(total=Sum('total'))['total'] or 0.0
+    total_debito = ventas_turno.filter(metodo_pago='TARJETA_DEBITO').aggregate(total=Sum('total'))['total'] or 0.0
+    total_credito = ventas_turno.filter(metodo_pago='TARJETA_CREDITO').aggregate(total=Sum('total'))['total'] or 0.0
+    total_mp = ventas_turno.filter(metodo_pago='TRANSFERENCIA').aggregate(total=Sum('total'))['total'] or 0.0
+
+    efectivo_esperado = float(turno_activo.monto_inicial) + float(total_efectivo)
+    total_general = float(total_efectivo) + float(total_debito) + float(total_credito) + float(total_mp)
+
+    if request.method == 'POST':
+        efectivo_contado = float(request.POST.get('monto_final_efectivo', 0.0))
+        observaciones = request.POST.get('observaciones', '')
+
+        diferencia = efectivo_contado - efectivo_esperado
+
+        turno_activo.monto_final_efectivo = efectivo_contado
+        turno_activo.fecha_cierre = timezone.now()
+        turno_activo.diferencia = diferencia
+        turno_activo.observaciones = observaciones
+        turno_activo.estado = 'CERRADA'
+        turno_activo.save()
+
+        # =========================================================
+        # EMITIR INFORME Z (numeración por sucursal)
+        # =========================================================
+        ultimo_z = InformeCaja.objects.filter(
+            tipo='Z',
+            turno__sucursal=turno_activo.sucursal,
+        ).order_by('-numero').first()
+        numero_z = (ultimo_z.numero + 1) if ultimo_z and ultimo_z.numero else 1
+
+        informe_z = InformeCaja.objects.create(
+            turno=turno_activo,
+            tipo='Z',
+            numero=numero_z,
+            emitido_por=request.user,
+            total_efectivo=total_efectivo,
+            total_debito=total_debito,
+            total_credito=total_credito,
+            total_transferencia=total_mp,
+            total_general=total_general,
+            cantidad_operaciones=ventas_turno.count(),
+            monto_inicial=turno_activo.monto_inicial,
+            efectivo_esperado=efectivo_esperado,
+            efectivo_contado=efectivo_contado,
+            diferencia=diferencia,
+            observaciones=observaciones,
+        )
+
+        registrar_log(
+            request,
+            accion='CAJA_CERRAR',
+            descripcion=f'Cierre Z #{numero_z} - Turno #{turno_activo.id} - Total ${total_general} - Diferencia ${diferencia}',
+            modelo='InformeCaja',
+            objeto_id=informe_z.id,
+            datos_despues={
+                'numero_z': numero_z,
+                'total_general': total_general,
+                'efectivo_contado': efectivo_contado,
+                'efectivo_esperado': efectivo_esperado,
+                'diferencia': diferencia,
+            },
+        )
+
+        return redirect('ventas:imprimir_informe', informe_id=informe_z.id)
+
+    context = {
+        'turno': turno_activo,
+        'total_efectivo': total_efectivo,
+        'total_debito': total_debito,
+        'total_credito': total_credito,
+        'total_mp': total_mp,
+        'total_general': total_general,
+        'efectivo_esperado': efectivo_esperado,
+        'cantidad_operaciones': ventas_turno.count(),
+    }
+    return render(request, 'ventas/cerrar_caja.html', context)

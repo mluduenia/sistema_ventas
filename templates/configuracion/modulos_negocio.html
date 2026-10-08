@@ -1,0 +1,228 @@
+{% extends 'base.html' %}
+
+{% block title %}Módulos del Sistema{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3">
+    <div class="row justify-content-center">
+        <div class="col-12 col-lg-9">
+
+            <div class="card border-0 shadow-sm mb-4">
+                <div class="card-header bg-body py-3 border-bottom">
+                    <h4 class="fw-bold mb-0">
+                        <i class="fas fa-sliders-h text-primary me-2"></i>
+                        Módulos del Sistema
+                    </h4>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted small mb-4">
+                        Elegí qué funcionalidades querés tener activas. El menú y las pantallas se adaptan automáticamente.
+                        Los módulos desactivados quedan ocultos para todos, salvo el superadmin.
+                    </p>
+
+                    <form method="POST">
+                        {% csrf_token %}
+
+                        <!-- PRESETS -->
+                        <div class="mb-4">
+                            <label class="form-label fw-bold">Modo de Negocio</label>
+                            <select name="modo_negocio" id="select-modo" class="form-select form-select-lg">
+                                <option value="LOCAL" {% if config.modo_negocio == 'LOCAL' %}selected{% endif %}>
+                                    🏪 Solo Local / Mostrador
+                                </option>
+                                <option value="LOCAL_REPARTO" {% if config.modo_negocio == 'LOCAL_REPARTO' %}selected{% endif %}>
+                                    🏪🚚 Local + Reparto
+                                </option>
+                                <option value="SOLO_REPARTO" {% if config.modo_negocio == 'SOLO_REPARTO' %}selected{% endif %}>
+                                    🚚 Solo Reparto / Preventa
+                                </option>
+                                <option value="CUSTOM" {% if config.modo_negocio == 'CUSTOM' %}selected{% endif %}>
+                                    ⚙️ Personalizado
+                                </option>
+                            </select>
+                            <small class="text-muted d-block mt-2">
+                                Al elegir un preset, los módulos de abajo se ajustan automáticamente.
+                            </small>
+                        </div>
+
+                        <hr>
+
+                        <!-- MÓDULOS INDIVIDUALES -->
+                        <h6 class="fw-bold mb-3">Módulos Individuales</h6>
+
+                        <div class="row g-3 mb-4" id="bloque-modulos">
+
+                            <div class="col-md-6">
+                                <div class="border rounded p-3 h-100 d-flex align-items-start gap-3">
+                                    <div class="form-check form-switch m-0 mt-1">
+                                        <input class="form-check-input" type="checkbox" role="switch"
+                                               name="modulo_punto_venta" id="mod_pv"
+                                               {% if config.modulo_punto_venta %}checked{% endif %}>
+                                    </div>
+                                    <div class="flex-grow-1">
+                                        <label class="fw-bold d-block mb-1" for="mod_pv">
+                                            🏪 Punto de Venta (Salón)
+                                        </label>
+                                        <small class="text-muted">
+                                            POS con caja abierta, cobro inmediato y facturación en el local.
+                                        </small>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="col-md-6">
+                                <div class="border rounded p-3 h-100 d-flex align-items-start gap-3">
+                                    <div class="form-check form-switch m-0 mt-1">
+                                        <input class="form-check-input" type="checkbox" role="switch"
+                                               name="modulo_preventa" id="mod_prev"
+                                               {% if config.modulo_preventa %}checked{% endif %}>
+                                    </div>
+                                    <div class="flex-grow-1">
+                                        <label class="fw-bold d-block mb-1" for="mod_prev">
+                                            📋 Preventa / Viajante
+                                        </label>
+                                        <small class="text-muted">
+                                            Toma de pedidos en la calle, sin caja abierta.
+                                        </small>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="col-md-6">
+                                <div class="border rounded p-3 h-100 d-flex align-items-start gap-3">
+                                    <div class="form-check form-switch m-0 mt-1">
+                                        <input class="form-check-input" type="checkbox" role="switch"
+                                               name="modulo_reparto" id="mod_rep"
+                                               {% if config.modulo_reparto %}checked{% endif %}>
+                                    </div>
+                                    <div class="flex-grow-1">
+                                        <label class="fw-bold d-block mb-1" for="mod_rep">
+                                            🚚 Reparto a Domicilio
+                                        </label>
+                                        <small class="text-muted">
+                                            Repartidores, remitos y entregas.
+                                        </small>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="col-md-6">
+                                <div class="border rounded p-3 h-100 d-flex align-items-start gap-3">
+                                    <div class="form-check form-switch m-0 mt-1">
+                                        <input class="form-check-input" type="checkbox" role="switch"
+                                               name="modulo_deposito" id="mod_dep"
+                                               {% if config.modulo_deposito %}checked{% endif %}>
+                                    </div>
+                                    <div class="flex-grow-1">
+                                        <label class="fw-bold d-block mb-1" for="mod_dep">
+                                            📦 Depósito / Almacén
+                                        </label>
+                                        <small class="text-muted">
+                                            Gestión de stock por depósito.
+                                        </small>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="col-md-6">
+                                <div class="border rounded p-3 h-100 d-flex align-items-start gap-3">
+                                    <div class="form-check form-switch m-0 mt-1">
+                                        <input class="form-check-input" type="checkbox" role="switch"
+                                               name="modulo_cuenta_corriente" id="mod_cc"
+                                               {% if config.modulo_cuenta_corriente %}checked{% endif %}>
+                                    </div>
+                                    <div class="flex-grow-1">
+                                        <label class="fw-bold d-block mb-1" for="mod_cc">
+                                            💰 Cuentas Corrientes
+                                        </label>
+                                        <small class="text-muted">
+                                            Manejo de deudas de clientes.
+                                        </small>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="col-md-6">
+                                <div class="border rounded p-3 h-100 d-flex align-items-start gap-3">
+                                    <div class="form-check form-switch m-0 mt-1">
+                                        <input class="form-check-input" type="checkbox" role="switch"
+                                               name="modulo_multi_sucursal" id="mod_multi"
+                                               {% if config.modulo_multi_sucursal %}checked{% endif %}>
+                                    </div>
+                                    <div class="flex-grow-1">
+                                        <label class="fw-bold d-block mb-1" for="mod_multi">
+                                            🏢 Multi-Sucursal
+                                        </label>
+                                        <small class="text-muted">
+                                            Gestión de múltiples sucursales.
+                                        </small>
+                                    </div>
+                                </div>
+                            </div>
+
+                        <div class="d-flex justify-content-end gap-2 border-top pt-3">
+                            <a href="{% url 'configuracion:configuracion_general' %}" class="btn btn-secondary px-4">
+                                Cancelar
+                            </a>
+                            <button type="submit" class="btn btn-primary px-4 fw-bold">
+                                <i class="fas fa-save me-1"></i> Guardar Configuración
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const select = document.getElementById('select-modo');
+    const checkboxes = {
+        punto_venta: document.getElementById('mod_pv'),
+        preventa: document.getElementById('mod_prev'),
+        reparto: document.getElementById('mod_rep'),
+        deposito: document.getElementById('mod_dep'),
+        cuenta_corriente: document.getElementById('mod_cc'),
+        multi_sucursal: document.getElementById('mod_multi'),
+    };
+
+    const PRESETS = {
+        'LOCAL': {
+            punto_venta: true, preventa: false, reparto: false,
+            deposito: false, cuenta_corriente: true, multi_sucursal: false,
+        },
+        'LOCAL_REPARTO': {
+            punto_venta: true, preventa: true, reparto: true,
+            deposito: true, cuenta_corriente: true, multi_sucursal: false,
+        },
+        'SOLO_REPARTO': {
+            punto_venta: false, preventa: true, reparto: true,
+            deposito: true, cuenta_corriente: true, multi_sucursal: false,
+        },
+    };
+
+    select.addEventListener('change', function () {
+        const modo = this.value;
+        const preset = PRESETS[modo];
+        if (!preset) return;
+
+        Object.keys(preset).forEach(function (key) {
+            if (checkboxes[key]) {
+                checkboxes[key].checked = preset[key];
+            }
+        });
+    });
+
+    Object.values(checkboxes).forEach(function (chk) {
+        if (!chk) return;
+        chk.addEventListener('change', function () {
+            select.value = 'CUSTOM';
+        });
+    });
+});
+</script>
+{% endblock %}

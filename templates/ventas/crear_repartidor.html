@@ -5,12 +5,12 @@
 {% block content %}
 <div class="container-fluid py-3">
     <div class="row justify-content-center">
-        <div class="col-12 col-lg-8">
+        <div class="col-12 col-lg-9">
 
             <div class="card border-0 shadow-sm">
                 <div class="card-header bg-body py-3 border-bottom d-flex justify-content-between align-items-center">
                     <h5 class="fw-bold mb-0">
-                        <i class="fas fa-user-plus text-success me-2"></i> Nuevo Repartidor
+                        <i class="fas fa-motorcycle text-success me-2"></i> Nuevo Repartidor
                     </h5>
                     <a href="{% url 'ventas:lista_repartidores' %}" class="btn btn-sm btn-outline-secondary">
                         <i class="fas fa-arrow-left me-1"></i> Volver
@@ -21,30 +21,36 @@
                         {% csrf_token %}
 
                         <!-- DATOS DE ACCESO -->
-                        <h6 class="fw-bold text-secondary mb-3 border-bottom pb-2">
-                            <i class="fas fa-key me-2"></i> Datos de Acceso al Sistema
+                        <h6 class="fw-bold text-secondary border-bottom pb-2 mb-3">
+                            <i class="fas fa-user-lock me-1"></i> Datos de Acceso
                         </h6>
                         <div class="row g-3 mb-4">
-                            <div class="col-md-6">
+                            <div class="col-md-4">
                                 <label class="form-label fw-bold small">
                                     Usuario <span class="text-danger">*</span>
                                 </label>
                                 <input type="text" name="username" class="form-control"
                                        value="{{ form_data.username|default:'' }}"
-                                       placeholder="ej: pedro.martinez" required>
+                                       placeholder="Ej: juan.perez" required>
+                                <small class="text-muted">Para iniciar sesión</small>
                             </div>
-                            <div class="col-md-6">
+                            <div class="col-md-4">
                                 <label class="form-label fw-bold small">
                                     Contraseña <span class="text-danger">*</span>
                                 </label>
                                 <input type="password" name="password" class="form-control"
-                                       placeholder="Contraseña de acceso" required>
+                                       placeholder="••••••••" required>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label fw-bold small">Email</label>
+                                <input type="email" name="email" class="form-control"
+                                       value="{{ form_data.email|default:'' }}">
                             </div>
                         </div>
 
                         <!-- DATOS PERSONALES -->
-                        <h6 class="fw-bold text-secondary mb-3 border-bottom pb-2">
-                            <i class="fas fa-user me-2"></i> Datos Personales
+                        <h6 class="fw-bold text-secondary border-bottom pb-2 mb-3">
+                            <i class="fas fa-id-card me-1"></i> Datos Personales
                         </h6>
                         <div class="row g-3 mb-4">
                             <div class="col-md-6">
@@ -61,66 +67,65 @@
                                 <input type="text" name="last_name" class="form-control"
                                        value="{{ form_data.last_name|default:'' }}" required>
                             </div>
-                            <div class="col-md-6">
+                            <div class="col-md-4">
                                 <label class="form-label fw-bold small">DNI</label>
                                 <input type="text" name="dni" class="form-control"
-                                       value="{{ form_data.dni|default:'' }}">
+                                       value="{{ form_data.dni|default:'' }}"
+                                       placeholder="Sin puntos">
                             </div>
-                            <div class="col-md-6">
+                            <div class="col-md-4">
                                 <label class="form-label fw-bold small">Teléfono</label>
                                 <input type="text" name="telefono" class="form-control"
-                                       value="{{ form_data.telefono|default:'' }}"
-                                       placeholder="ej: 11 5555-1234">
+                                       value="{{ form_data.telefono|default:'' }}">
                             </div>
-                            <div class="col-md-12">
-                                <label class="form-label fw-bold small">Email</label>
-                                <input type="email" name="email" class="form-control"
-                                       value="{{ form_data.email|default:'' }}">
-                            </div>
-                        </div>
-
-                        <!-- DATOS DEL RODADO -->
-                        <h6 class="fw-bold text-secondary mb-3 border-bottom pb-2">
-                            <i class="fas fa-motorcycle me-2"></i> Vehículo y Zona
-                        </h6>
-                        <div class="row g-3 mb-4">
-                            <div class="col-md-6">
-                                <label class="form-label fw-bold small">Vehículo</label>
-                                <input type="text" name="vehiculo" class="form-control"
-                                       value="{{ form_data.vehiculo|default:'' }}"
-                                       placeholder="ej: Moto Honda 150">
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label fw-bold small">Patente</label>
-                                <input type="text" name="patente" class="form-control"
-                                       value="{{ form_data.patente|default:'' }}"
-                                       placeholder="ej: ABC123">
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label fw-bold small">Zona Asignada</label>
-                                <input type="text" name="zona" class="form-control"
-                                       value="{{ form_data.zona|default:'' }}"
-                                       placeholder="ej: Centro, Norte, Sur">
-                            </div>
-                            <div class="col-md-6">
+                            <div class="col-md-4">
                                 <label class="form-label fw-bold small">Licencia de Conducir</label>
                                 <input type="text" name="licencia_conducir" class="form-control"
                                        value="{{ form_data.licencia_conducir|default:'' }}">
                             </div>
                         </div>
 
-                        <!-- ESTADO Y NOTAS -->
+                        <!-- DATOS DEL VEHÍCULO -->
+                        <h6 class="fw-bold text-secondary border-bottom pb-2 mb-3">
+                            <i class="fas fa-truck me-1"></i> Vehículo y Zona
+                        </h6>
                         <div class="row g-3 mb-4">
-                            <div class="col-md-12">
+                            <div class="col-md-5">
+                                <label class="form-label fw-bold small">Vehículo</label>
+                                <input type="text" name="vehiculo" class="form-control"
+                                       value="{{ form_data.vehiculo|default:'' }}"
+                                       placeholder="Ej: Moto Honda 150">
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label fw-bold small">Patente</label>
+                                <input type="text" name="patente" class="form-control"
+                                       value="{{ form_data.patente|default:'' }}"
+                                       placeholder="Ej: ABC123">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label fw-bold small">Zona</label>
+                                <input type="text" name="zona" class="form-control"
+                                       value="{{ form_data.zona|default:'' }}"
+                                       placeholder="Ej: Centro, Norte, Sur">
+                            </div>
+                        </div>
+
+                        <!-- ESTADO Y OBSERVACIONES -->
+                        <h6 class="fw-bold text-secondary border-bottom pb-2 mb-3">
+                            <i class="fas fa-toggle-on me-1"></i> Estado
+                        </h6>
+                        <div class="row g-3 mb-4">
+                            <div class="col-md-4">
                                 <div class="form-check form-switch">
                                     <input class="form-check-input" type="checkbox" name="activo"
                                            id="chk_activo" checked>
                                     <label class="form-check-label fw-bold small" for="chk_activo">
-                                        Repartidor activo (puede recibir pedidos)
+                                        Repartidor activo
                                     </label>
                                 </div>
+                                <small class="text-muted">Si lo desactivás, no podrá loguearse</small>
                             </div>
-                            <div class="col-md-12">
+                            <div class="col-md-8">
                                 <label class="form-label fw-bold small">Observaciones</label>
                                 <textarea name="observaciones" class="form-control" rows="2"
                                           placeholder="Notas internas...">{{ form_data.observaciones|default:'' }}</textarea>

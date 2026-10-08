@@ -1,0 +1,77 @@
+{% extends 'base.html' %}
+
+{% block title %}Detalle de Evento{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3">
+    <div class="row justify-content-center">
+        <div class="col-12 col-lg-9">
+
+            <div class="card border-0 shadow-sm mb-3">
+                <div class="card-header bg-body py-3 border-bottom d-flex justify-content-between align-items-center">
+                    <h5 class="fw-bold mb-0">
+                        <i class="fas {{ log.icono_accion }} me-2"></i>
+                        Evento #{{ log.id }}
+                    </h5>
+                    <a href="{% url 'configuracion:auditoria' %}" class="btn btn-sm btn-outline-secondary">
+                        <i class="fas fa-arrow-left me-1"></i> Volver
+                    </a>
+                </div>
+                <div class="card-body">
+
+                    <div class="row g-3 mb-4">
+                        <div class="col-md-6">
+                            <p class="mb-1"><strong>Fecha:</strong> {{ log.fecha|date:"d/m/Y H:i:s" }}</p>
+                            <p class="mb-1"><strong>Usuario:</strong> {{ log.usuario.username|default:"Anónimo" }}</p>
+                            <p class="mb-1"><strong>Rol:</strong> {{ log.rol_snapshot|upper|default:"-" }}</p>
+                        </div>
+                        <div class="col-md-6">
+                            <p class="mb-1"><strong>Acción:</strong>
+                                <span class="badge bg-{{ log.badge_color }}">{{ log.get_accion_display }}</span>
+                            </p>
+                            <p class="mb-1"><strong>Nivel:</strong>
+                                <span class="badge bg-{{ log.badge_color }}">{{ log.get_nivel_display }}</span>
+                            </p>
+                            <p class="mb-1"><strong>Modelo:</strong> {{ log.modelo|default:"-" }} #{{ log.objeto_id|default:"-" }}</p>
+                        </div>
+                        <div class="col-md-6">
+                            <p class="mb-1"><strong>IP:</strong> {{ log.ip|default:"-" }}</p>
+                        </div>
+                        <div class="col-md-6">
+                            <p class="mb-1"><strong>User Agent:</strong> <span class="small text-muted">{{ log.user_agent|truncatechars:80 }}</span></p>
+                        </div>
+                    </div>
+
+                    <div class="mb-4">
+                        <h6 class="fw-bold">Descripción</h6>
+                        <p class="bg-body-tertiary p-3 rounded">{{ log.descripcion }}</p>
+                    </div>
+
+                    {% if log.datos_antes %}
+                    <div class="mb-4">
+                        <h6 class="fw-bold text-warning">Datos ANTES</h6>
+                        <pre class="bg-body-tertiary p-3 rounded small">{{ log.datos_antes|pprint }}</pre>
+                    </div>
+                    {% endif %}
+
+                    {% if log.datos_despues %}
+                    <div class="mb-4">
+                        <h6 class="fw-bold text-success">Datos DESPUÉS</h6>
+                        <pre class="bg-body-tertiary p-3 rounded small">{{ log.datos_despues|pprint }}</pre>
+                    </div>
+                    {% endif %}
+
+                    {% if log.metadata %}
+                    <div class="mb-4">
+                        <h6 class="fw-bold">Metadata</h6>
+                        <pre class="bg-body-tertiary p-3 rounded small">{{ log.metadata|pprint }}</pre>
+                    </div>
+                    {% endif %}
+
+                </div>
+            </div>
+
+        </div>
+    </div>
+</div>
+{% endblock %}

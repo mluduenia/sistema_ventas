@@ -25,7 +25,7 @@ INSTALLED_APPS = [
     'apps.usuarios',
     'apps.core',
     'apps.productos',
-    'apps.configuracion',
+    'apps.configuracion.apps.ConfiguracionConfig',
     'apps.ventas',
 ]
 
@@ -55,7 +55,7 @@ TEMPLATES = [
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
                 
-                # 👈 AGREGA ESTA LÍNEA AQUÍ:
+                'apps.configuracion.context_processors.modulos_activos',
                 'apps.configuracion.context_processors.configuracion_global',
             ],
         },

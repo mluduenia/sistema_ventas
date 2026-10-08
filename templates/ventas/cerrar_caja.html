@@ -5,12 +5,25 @@
 {% block content %}
 <div class="row justify-content-center">
     <div class="col-12 col-lg-8">
+
+        <!-- BOTÓN X: ANTES DE CERRAR -->
+        <div class="alert alert-info border-0 shadow-sm d-flex justify-content-between align-items-center mb-3">
+            <div>
+                <strong><i class="fas fa-eye me-1"></i> Informe X (parcial)</strong>
+                <p class="small mb-0">Consultá los totales del turno <strong>sin cerrarlo</strong>. Podés emitirlo las veces que quieras.</p>
+            </div>
+            <a href="{% url 'ventas:informe_x' %}" class="btn btn-outline-info fw-bold" target="_blank">
+                <i class="fas fa-print me-1"></i> Emitir X
+            </a>
+        </div>
+
         <div class="card border-0 shadow-lg mb-4">
             <div class="card-header bg-dark text-white py-3 d-flex justify-content-between align-items-center">
                 <h5 class="mb-0 fw-bold"><i class="fas fa-calculator me-2 text-warning"></i> Arqueo y Relevo de Caja</h5>
                 <span class="badge bg-secondary">Turno #{{ turno.id }}</span>
             </div>
             <div class="card-body p-4">
+
                 <!-- Resumen de Totales del Turno -->
                 <div class="row g-3 mb-4">
                     <div class="col-6 col-md-3">
@@ -33,7 +46,7 @@
                     </div>
                     <div class="col-6 col-md-3">
                         <div class="p-3 bg-primary-subtle text-primary rounded text-center">
-                            <small class="d-block">Mercado Pago</small>
+                            <small class="d-block">Transferencia / MP</small>
                             <span class="fs-5 fw-bold">${{ total_mp|floatformat:2 }}</span>
                         </div>
                     </div>
@@ -47,26 +60,43 @@
                 </div>
 
                 <!-- Formulario de Conteo del Cajero -->
-                <form method="POST">
+                <form method="POST" id="form-cierre">
                     {% csrf_token %}
+
+                    <div class="alert alert-danger border-0 mb-3">
+                        <i class="fas fa-exclamation-triangle me-1"></i>
+                        <strong>Atención:</strong> al confirmar, el turno se cierra <strong>definitivamente</strong> y se emite el <strong>Informe Z</strong>. No se puede deshacer.
+                    </div>
+
                     <div class="mb-3">
                         <label class="form-label fw-bold text-secondary">Efectivo Real Contado en Mano ($)</label>
                         <div class="input-group input-group-lg">
                             <span class="input-group-text bg-body-tertiary fw-bold">$</span>
-                            <input type="number" step="0.01" name="monto_final_efectivo" class="form-control fw-bold fs-3 text-success" placeholder="0.00" required autofocus>
+                            <input type="number" step="0.01" name="monto_final_efectivo"
+                                   id="monto_final_efectivo"
+                                   class="form-control fw-bold fs-3 text-success"
+                                   placeholder="0.00" required autofocus>
                         </div>
-                        <small class="text-muted">Ingresa el total físico de billetes y monedas que entregas al relevo.</small>
+                        <small class="text-muted">Ingresá el total físico de billetes y monedas que entregás al relevo.</small>
+                    </div>
+
+                    <!-- DIFERENCIA EN VIVO -->
+                    <div class="mb-4 p-3 bg-body-tertiary rounded d-flex justify-content-between align-items-center">
+                        <span class="fw-bold">Diferencia:</span>
+                        <span id="diferencia_display" class="fw-bold fs-4 text-success">$0.00</span>
                     </div>
 
                     <div class="mb-4">
                         <label class="form-label fw-bold text-secondary">Observaciones (Opcional)</label>
-                        <textarea name="observaciones" class="form-control" rows="2" placeholder="Ej: Se retiraron $5.000 para pagar a un proveedor..."></textarea>
+                        <textarea name="observaciones" class="form-control" rows="2"
+                                  placeholder="Ej: Se retiraron $5.000 para pagar a un proveedor..."></textarea>
                     </div>
 
                     <div class="d-flex gap-2">
                         <a href="{% url 'ventas:pos' %}" class="btn btn-secondary btn-lg fw-bold w-50">Cancelar</a>
-                        <button type="submit" class="btn btn-danger btn-lg fw-bold w-50 shadow-sm">
-                            <i class="fas fa-door-open me-2"></i> Cerrar Caja y Entregar
+                        <button type="submit" class="btn btn-danger btn-lg fw-bold w-50 shadow-sm"
+                                onclick="return confirm('⚠️ ESTO CIERRA EL TURNO DEFINITIVAMENTE.\n\nSe va a emitir el Informe Z.\n¿Confirmás el cierre?');">
+                            <i class="fas fa-lock me-2"></i> Cerrar Caja y Emitir Z
                         </button>
                     </div>
                 </form>
@@ -74,4 +104,22 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    const esperado = {{ efectivo_esperado|default:0 }};
+    const input = document.getElementById('monto_final_efectivo');
+    const display = document.getElementById('diferencia_display');
+
+    if (input && display) {
+        input.addEventListener('input', function () {
+            const contado = parseFloat(this.value) || 0;
+            const dif = contado - esperado;
+            display.textContent = (dif >= 0 ? '$' : '-$') + Math.abs(dif).toFixed(2);
+            display.className = 'fw-bold fs-4 ' +
+                (dif === 0 ? 'text-success' : (dif > 0 ? 'text-info' : 'text-danger'));
+        });
+    }
+</script>
 {% endblock %}

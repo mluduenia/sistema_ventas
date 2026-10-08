@@ -1,5 +1,5 @@
 from django.db import models
-
+from django.conf import settings
 
 class EmpresaConfig(models.Model):
     CONDICION_IVA_CHOICES = [
@@ -11,6 +11,16 @@ class EmpresaConfig(models.Model):
     AMBIENTE_ARCA_CHOICES = [
         ('HOMO', 'Homologación (Pruebas)'),
         ('PROD', 'Producción (Real)'),
+    ]
+
+    # ============================================================
+    # MODO DE NEGOCIO / MÓDULOS ACTIVABLES
+    # ============================================================
+    MODO_NEGOCIO_CHOICES = [
+        ('LOCAL', 'Solo Local / Mostrador'),
+        ('LOCAL_REPARTO', 'Local + Reparto'),
+        ('SOLO_REPARTO', 'Solo Reparto / Preventa'),
+        ('CUSTOM', 'Personalizado'),
     ]
 
     # Datos Comerciales
@@ -38,12 +48,111 @@ class EmpresaConfig(models.Model):
     certificado_crt = models.FileField(upload_to='certificados/', blank=True, null=True, help_text='Archivo .crt obtenido en ARCA')
     clave_privada_key = models.FileField(upload_to='certificados/', blank=True, null=True, help_text='Archivo .key de la clave privada')
 
+    # ============================================================
+    # MÓDULOS ACTIVABLES DEL SISTEMA
+    # ============================================================
+    modo_negocio = models.CharField(
+        "Modo de Negocio",
+        max_length=20,
+        choices=MODO_NEGOCIO_CHOICES,
+        default='LOCAL',
+        help_text="Preset rápido. Al cambiarlo, se actualizan los módulos automáticamente."
+    )
+
+    # --- Módulos individuales ---
+    modulo_punto_venta = models.BooleanField(
+        "Módulo Punto de Venta (Salón / Mostrador)",
+        default=True,
+        help_text="Habilita el POS con caja abierta, cobro inmediato y facturación en el local."
+    )
+    modulo_preventa = models.BooleanField(
+        "Módulo Preventa / Viajante",
+        default=False,
+        help_text="Habilita la toma de pedidos en la calle, sin caja abierta."
+    )
+    modulo_reparto = models.BooleanField(
+        "Módulo Reparto a Domicilio",
+        default=False,
+        help_text="Habilita repartidores, remitos y entregas."
+    )
+    modulo_deposito = models.BooleanField(
+        "Módulo Depósito / Almacén",
+        default=False,
+        help_text="Habilita la gestión de stock por depósito."
+    )
+    modulo_cuenta_corriente = models.BooleanField(
+        "Módulo Cuentas Corrientes",
+        default=True,
+        help_text="Habilita el manejo de deudas de clientes."
+    )
+    modulo_multi_sucursal = models.BooleanField(
+        "Módulo Multi-Sucursal",
+        default=False,
+        help_text="Habilita la gestión de múltiples sucursales."
+    )
+
     class Meta:
         verbose_name = 'Configuración de Empresa'
         verbose_name_plural = 'Configuraciones de Empresa'
 
     def __str__(self):
         return f"{self.razon_social} (CUIT: {self.cuit})"
+
+    # ============================================================
+    # PRESETS DE MÓDULOS
+    # ============================================================
+
+    def aplicar_preset(self, modo):
+        """
+        Aplica los flags de módulos según el modo de negocio elegido.
+        Devuelve True si aplicó un preset, False si es CUSTOM.
+        """
+        if modo == 'LOCAL':
+            self.modulo_punto_venta = True
+            self.modulo_preventa = False
+            self.modulo_reparto = False
+            self.modulo_deposito = False
+            self.modulo_cuenta_corriente = True
+            self.modulo_multi_sucursal = False
+        elif modo == 'LOCAL_REPARTO':
+            self.modulo_punto_venta = True
+            self.modulo_preventa = True
+            self.modulo_reparto = True
+            self.modulo_deposito = True
+            self.modulo_cuenta_corriente = True
+            self.modulo_multi_sucursal = False
+        elif modo == 'SOLO_REPARTO':
+            self.modulo_punto_venta = False
+            self.modulo_preventa = True
+            self.modulo_reparto = True
+            self.modulo_deposito = True
+            self.modulo_cuenta_corriente = True
+            self.modulo_multi_sucursal = False
+        else:
+            # CUSTOM → no se toca nada
+            return False
+
+        self.modo_negocio = modo
+        return True
+
+    def save(self, *args, **kwargs):
+        """
+        Si el modo_negocio cambió, aplica el preset automáticamente
+        ANTES de guardar (excepto si es CUSTOM).
+        """
+        if self.pk:
+            try:
+                anterior = EmpresaConfig.objects.get(pk=self.pk)
+                if anterior.modo_negocio != self.modo_negocio and self.modo_negocio != 'CUSTOM':
+                    self.aplicar_preset(self.modo_negocio)
+            except EmpresaConfig.DoesNotExist:
+                pass
+        else:
+            # Es nuevo: aplicar preset inicial
+            if self.modo_negocio != 'CUSTOM':
+                self.aplicar_preset(self.modo_negocio)
+
+        super().save(*args, **kwargs)
 
 
 # =========================================================
@@ -73,7 +182,7 @@ class Sucursal(models.Model):
         null=True, blank=True,  # temporal para migración
         help_text="Lista de precios que usa esta sucursal"
     )
-    
+
     # --- Contacto ---
     direccion = models.CharField("Dirección", max_length=255, blank=True)
     telefono = models.CharField("Teléfono", max_length=30, blank=True)
@@ -93,7 +202,6 @@ class Sucursal(models.Model):
         default=False,
         help_text="Marcar solo si es la sucursal principal (donde se produce/almacena)"
     )
-    
 
     # --- Auditoría ---
     fecha_alta = models.DateTimeField("Fecha de Alta", auto_now_add=True, null=True)
@@ -112,3 +220,123 @@ class Sucursal(models.Model):
     def es_central_bool(self):
         """Alias por compatibilidad."""
         return self.es_central
+
+# =========================================================
+# LOG DE AUDITORÍA
+# =========================================================
+
+class AuditLog(models.Model):
+    """Registra todas las acciones importantes del sistema para auditoría."""
+
+    ACCIONES = [
+        ('LOGIN', 'Inicio de sesión'),
+        ('LOGIN_FAIL', 'Intento de login fallido'),
+        ('LOGOUT', 'Cierre de sesión'),
+        ('CREATE', 'Creación'),
+        ('UPDATE', 'Modificación'),
+        ('DELETE', 'Eliminación'),
+        ('BAJA', 'Baja lógica'),
+        ('REACTIVAR', 'Reactivación'),
+        ('VENTA', 'Venta'),
+        ('ANULAR', 'Anulación'),
+        ('FACTURAR', 'Facturación'),
+        ('CAJA_ABRIR', 'Apertura de caja'),
+        ('CAJA_CERRAR', 'Cierre de caja'),
+        ('INFO_X', 'Informe X emitido'),
+        ('INFO_Z', 'Informe Z emitido'),
+        ('CONFIG', 'Cambio de configuración'),
+        ('MODULOS', 'Cambio de módulos'),
+        ('LIMPIEZA', 'Limpieza de datos'),
+        ('ERROR', 'Error del sistema'),
+        ('ACCESO_DENEGADO', 'Acceso denegado'),
+    ]
+
+    NIVELES = [
+        ('INFO', 'Informativo'),
+        ('WARNING', 'Advertencia'),
+        ('CRITICAL', 'Crítico'),
+    ]
+
+    # --- Cuándo ---
+    fecha = models.DateTimeField("Fecha", auto_now_add=True, db_index=True)
+
+    # --- Quién ---
+    usuario = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='audit_logs',
+        verbose_name="Usuario",
+    )
+    rol_snapshot = models.CharField(
+        "Rol (snapshot)",
+        max_length=20, blank=True,
+        help_text="Rol del usuario en el momento del evento",
+    )
+
+    # --- Qué ---
+    accion = models.CharField("Acción", max_length=20, choices=ACCIONES, db_index=True)
+    nivel = models.CharField("Nivel", max_length=10, choices=NIVELES, default='INFO', db_index=True)
+
+    modelo = models.CharField("Modelo", max_length=50, blank=True, db_index=True)
+    objeto_id = models.PositiveIntegerField("ID del objeto", null=True, blank=True, db_index=True)
+
+    descripcion = models.TextField("Descripción")
+
+    # --- Detalles (JSON) ---
+    datos_antes = models.JSONField("Datos antes", null=True, blank=True)
+    datos_despues = models.JSONField("Datos después", null=True, blank=True)
+    metadata = models.JSONField("Metadata", null=True, blank=True)
+
+    # --- Contexto técnico ---
+    ip = models.GenericIPAddressField("IP", null=True, blank=True)
+    user_agent = models.TextField("User Agent", blank=True)
+
+    class Meta:
+        verbose_name = "Log de Auditoría"
+        verbose_name_plural = "Logs de Auditoría"
+        ordering = ['-fecha']
+        indexes = [
+            models.Index(fields=['-fecha', 'accion']),
+            models.Index(fields=['usuario', '-fecha']),
+            models.Index(fields=['modelo', 'objeto_id']),
+        ]
+
+    def __str__(self):
+        quien = self.usuario.username if self.usuario else 'Anónimo'
+        return f"[{self.fecha:%d/%m/%Y %H:%M}] {quien} - {self.get_accion_display()}"
+
+    @property
+    def badge_color(self):
+        """Color del badge según el nivel."""
+        return {
+            'INFO': 'info',
+            'WARNING': 'warning text-dark',
+            'CRITICAL': 'danger',
+        }.get(self.nivel, 'secondary')
+
+    @property
+    def icono_accion(self):
+        """Ícono FontAwesome según la acción."""
+        return {
+            'LOGIN': 'fa-sign-in-alt text-success',
+            'LOGIN_FAIL': 'fa-exclamation-triangle text-danger',
+            'LOGOUT': 'fa-sign-out-alt text-secondary',
+            'CREATE': 'fa-plus-circle text-success',
+            'UPDATE': 'fa-edit text-primary',
+            'DELETE': 'fa-trash text-danger',
+            'BAJA': 'fa-user-slash text-warning',
+            'REACTIVAR': 'fa-user-check text-success',
+            'VENTA': 'fa-shopping-cart text-success',
+            'ANULAR': 'fa-ban text-danger',
+            'FACTURAR': 'fa-file-invoice text-primary',
+            'CAJA_ABRIR': 'fa-lock-open text-success',
+            'CAJA_CERRAR': 'fa-lock text-warning',
+            'INFO_X': 'fa-file-alt text-info',
+            'INFO_Z': 'fa-file-invoice-dollar text-danger',
+            'CONFIG': 'fa-cog text-primary',
+            'MODULOS': 'fa-sliders-h text-primary',
+            'LIMPIEZA': 'fa-broom text-danger',
+            'ERROR': 'fa-bug text-danger',
+            'ACCESO_DENEGADO': 'fa-shield-alt text-warning',
+        }.get(self.accion, 'fa-circle text-secondary')

@@ -139,17 +139,20 @@
         </div>
     </div>
 
-    <!-- DATOS DEL CLIENTE -->
+    <!-- DATOS DEL CLIENTE (blindado para consumidor final anónimo) -->
     <div class="card bg-light border-0 mb-3">
         <div class="card-body p-2">
             <div class="row">
                 <div class="col-7">
-                    <p class="mb-1"><strong>Cliente / Señor(es):</strong> {{ venta.cliente.nombre|default:"Consumidor Final" }}</p>
-                    <p class="mb-0"><strong>Dirección / Entrega:</strong> {{ venta.direccion_entrega|default:venta.cliente.direccion_completa|default:"Retira en Local" }}</p>
+                    <p class="mb-1"><strong>Cliente / Señor(es):</strong> {{ venta.cliente_nombre }}</p>
+                    <p class="mb-0">
+                        <strong>Dirección / Entrega:</strong>
+                        {{ venta.direccion_entrega|default:venta.cliente_direccion }}
+                    </p>
                 </div>
                 <div class="col-5 text-end">
-                    <p class="mb-1"><strong>DNI / CUIT:</strong> {{ venta.cliente.numero_documento|default:"S/D" }}</p>
-                    <p class="mb-0"><strong>Condición IVA:</strong> {{ venta.cliente.get_condicion_iva_display|default:"Consumidor Final" }}</p>
+                    <p class="mb-1"><strong>DNI / CUIT:</strong> {{ venta.cliente_documento }}</p>
+                    <p class="mb-0"><strong>Condición IVA:</strong> {{ venta.cliente_condicion_iva_display }}</p>
                 </div>
             </div>
         </div>

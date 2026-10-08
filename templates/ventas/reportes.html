@@ -31,7 +31,6 @@
     <div class="card-body py-3">
         <form method="GET" class="row g-2 align-items-end">
 
-            <!-- Selector de modo -->
             <div class="col-md-2">
                 <label class="fw-bold small text-secondary d-block">Tipo de filtro</label>
                 <select name="modo" id="modo_select" class="form-select form-select-sm">
@@ -40,7 +39,6 @@
                 </select>
             </div>
 
-            <!-- Bloque MES/AÑO -->
             <div class="col-md-2" id="bloque_mes">
                 <label class="fw-bold small text-secondary d-block">Mes</label>
                 <select name="mes" class="form-select form-select-sm">
@@ -68,20 +66,55 @@
                 </select>
             </div>
 
-            <!-- Bloque RANGO -->
             <div class="col-md-2" id="bloque_desde" style="display: none;">
                 <label class="fw-bold small text-secondary d-block">Desde</label>
-                <input type="date" name="fecha_desde" class="form-control form-control-sm"
-                       value="{{ fecha_desde }}">
+                <input type="date" name="fecha_desde" class="form-control form-control-sm" value="{{ fecha_desde }}">
             </div>
 
             <div class="col-md-2" id="bloque_hasta" style="display: none;">
                 <label class="fw-bold small text-secondary d-block">Hasta</label>
-                <input type="date" name="fecha_hasta" class="form-control form-control-sm"
-                       value="{{ fecha_hasta }}">
+                <input type="date" name="fecha_hasta" class="form-control form-control-sm" value="{{ fecha_hasta }}">
             </div>
 
-            <!-- Botón -->
+            <!-- 🔽 NUEVOS FILTROS -->
+            {% if multi_sucursal %}
+            <div class="col-md-2">
+                <label class="fw-bold small text-secondary d-block">Sucursal</label>
+                <select name="sucursal" class="form-select form-select-sm">
+                    <option value="">-- Todas --</option>
+                    {% for s in sucursales_disponibles %}
+                        <option value="{{ s.id }}" {% if sucursal_id == s.id|stringformat:"s" %}selected{% endif %}>
+                            {{ s.nombre }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% endif %}
+
+            <div class="col-md-2">
+                <label class="fw-bold small text-secondary d-block">Vendedor</label>
+                <select name="vendedor" class="form-select form-select-sm">
+                    <option value="">-- Todos --</option>
+                    {% for v in vendedores_disponibles %}
+                        <option value="{{ v.id }}" {% if vendedor_id == v.id|stringformat:"s" %}selected{% endif %}>
+                            {{ v.get_full_name|default:v.username }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="col-md-2">
+                <label class="fw-bold small text-secondary d-block">Categoría</label>
+                <select name="categoria" class="form-select form-select-sm">
+                    <option value="">-- Todas --</option>
+                    {% for c in categorias_disponibles %}
+                        <option value="{{ c.id }}" {% if categoria_id == c.id|stringformat:"s" %}selected{% endif %}>
+                            {{ c.nombre }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+
             <div class="col-md-2">
                 <button type="submit" class="btn btn-sm btn-primary fw-semibold w-100">
                     <i class="fas fa-sync-alt me-1"></i> Actualizar
@@ -89,7 +122,6 @@
             </div>
         </form>
 
-        <!-- Descripción del rango activo -->
         {% if rango_descripcion %}
         <div class="mt-2 small text-muted">
             <i class="fas fa-info-circle me-1"></i> Mostrando datos de: <strong>{{ rango_descripcion }}</strong>
@@ -126,6 +158,148 @@
         </div>
     </div>
 </div>
+
+<!-- 🔽 NUEVO: CUENTAS CORRIENTES -->
+{% if tiene_cc and es_admin and cc_stats %}
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-body py-3 border-bottom d-flex justify-content-between align-items-center">
+        <h6 class="fw-bold mb-0"><i class="fas fa-hand-holding-usd text-danger me-2"></i> Cuentas Corrientes</h6>
+        <a href="{% url 'ventas:cuentas_corrientes' %}" class="btn btn-sm btn-outline-info">
+            Ver todo <i class="fas fa-arrow-right ms-1"></i>
+        </a>
+    </div>
+    <div class="card-body">
+        <div class="row g-2 mb-3">
+            <div class="col-md-4">
+                <div class="p-3 bg-danger bg-opacity-10 rounded">
+                    <span class="text-muted small d-block">Deuda total</span>
+                    <span class="fw-bold fs-4 text-danger">${{ cc_stats.total_deuda|floatformat:2 }}</span>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="p-3 bg-body-tertiary rounded">
+                    <span class="text-muted small d-block">Clientes con deuda</span>
+                    <span class="fw-bold fs-4">{{ cc_stats.clientes_con_deuda }}</span>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="p-3 bg-body-tertiary rounded">
+                    <span class="text-muted small d-block">Comprobantes pendientes</span>
+                    <span class="fw-bold fs-4">{{ cc_stats.cantidad_comprobantes }}</span>
+                </div>
+            </div>
+        </div>
+
+        {% if cc_stats.top_deudores %}
+        <h6 class="fw-bold small text-secondary mb-2">TOP 10 CLIENTES CON MAYOR DEUDA</h6>
+        <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Cliente</th>
+                        <th>Documento</th>
+                        <th class="text-center">Comprobantes</th>
+                        <th class="text-end">Deuda</th>
+                        <th class="text-center"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for d in cc_stats.top_deudores %}
+                    <tr>
+                        <td class="fw-bold">{{ d.cliente__nombre }}</td>
+                        <td class="small text-muted">{{ d.cliente__numero_documento|default:"-" }}</td>
+                        <td class="text-center">{{ d.cantidad }}</td>
+                        <td class="text-end fw-bold text-danger">${{ d.deuda|floatformat:2 }}</td>
+                        <td class="text-center">
+                            <a href="{% url 'ventas:cuenta_corriente_cliente' d.cliente__id %}" class="btn btn-sm btn-outline-primary" title="Ver cuenta">
+                                <i class="fas fa-eye"></i>
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
+<!-- 🔽 NUEVO: POR SUCURSAL -->
+{% if multi_sucursal and sucursales_stats %}
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-body py-3 border-bottom">
+        <h6 class="fw-bold mb-0"><i class="fas fa-store text-primary me-2"></i> Facturación por Sucursal</h6>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th class="ps-3">Sucursal</th>
+                        <th class="text-center">Operaciones</th>
+                        <th class="text-end">Ticket Promedio</th>
+                        <th class="text-end">Ganancia</th>
+                        <th class="text-end">Total Facturado</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in sucursales_stats %}
+                    <tr>
+                        <td class="ps-3 fw-bold">
+                            {% if r.sucursal.es_central %}
+                                <i class="fas fa-star text-primary me-1"></i>
+                            {% endif %}
+                            {{ r.sucursal.nombre }}
+                        </td>
+                        <td class="text-center">{{ r.cantidad }}</td>
+                        <td class="text-end">${{ r.ticket_promedio|floatformat:2 }}</td>
+                        <td class="text-end text-info">${{ r.ganancia|floatformat:2 }}</td>
+                        <td class="text-end fw-bold text-success">${{ r.total|floatformat:2 }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+                <tfoot class="table-secondary">
+                    <tr>
+                        <td class="ps-3 fw-bold">TOTAL</td>
+                        <td class="text-center fw-bold">{{ total_operaciones }}</td>
+                        <td class="text-end fw-bold">${{ ticket_promedio|floatformat:2 }}</td>
+                        <td class="text-end fw-bold text-info">${{ ganancia_real|floatformat:2 }}</td>
+                        <td class="text-end fw-bold text-success">${{ total_recaudado|floatformat:2 }}</td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- 🔽 NUEVO: VENTAS POR DÍA -->
+{% if ventas_por_dia %}
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-body py-3 border-bottom">
+        <h6 class="fw-bold mb-0"><i class="fas fa-chart-area text-success me-2"></i> Ventas por Día</h6>
+    </div>
+    <div class="card-body">
+        {% for v in ventas_por_dia %}
+        <div class="mb-2">
+            <div class="d-flex justify-content-between small mb-1">
+                <span class="fw-semibold">{{ v.dia|date:"d/m/Y" }}</span>
+                <span>
+                    <span class="text-muted">{{ v.cantidad }} op.</span>
+                    <span class="fw-bold ms-2">${{ v.total|floatformat:2 }}</span>
+                </span>
+            </div>
+            <div class="progress" style="height: 8px;">
+                <div class="progress-bar bg-success" role="progressbar"
+                     style="width: {{ v.porcentaje }}%;"
+                     aria-valuenow="{{ v.porcentaje }}" aria-valuemin="0" aria-valuemax="100"></div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
 
 <div class="row g-4 mb-4">
     <!-- MEDIOS DE PAGO -->
@@ -165,35 +339,37 @@
     <div class="col-12 col-lg-6">
         <div class="card border-0 shadow-sm h-100">
             <div class="card-header bg-body py-3 border-bottom">
-                <h6 class="fw-bold mb-0"><i class="fas fa-box text-warning me-2"></i> Top 5 Productos Más Vendidos</h6>
+                <h6 class="fw-bold mb-0"><i class="fas fa-box text-warning me-2"></i> Top 15 Productos Más Vendidos</h6>
             </div>
             <div class="card-body p-0">
-                <table class="table table-hover align-middle mb-0">
-                    <thead>
-                        <tr>
-                            <th class="ps-3 py-2">Producto</th>
-                            <th class="text-center py-2">Unidades</th>
-                            <th class="text-end pe-3 py-2">Subtotal</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for item in productos_top %}
-                        <tr>
-                            <td class="ps-3 fw-semibold">{{ item.producto__nombre }}</td>
-                            <td class="text-center">{{ item.unidades }}</td>
-                            <td class="text-end pe-3 fw-bold">${{ item.recaudado|floatformat:2 }}</td>
-                        </tr>
-                        {% empty %}
-                        <tr><td colspan="3" class="text-center text-muted py-3">Sin datos en el período</td></tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead>
+                            <tr>
+                                <th class="ps-3 py-2">Producto</th>
+                                <th class="text-center py-2">Unidades</th>
+                                <th class="text-end pe-3 py-2">Subtotal</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in productos_top %}
+                            <tr>
+                                <td class="ps-3 fw-semibold">{{ item.producto__nombre }}</td>
+                                <td class="text-center">{{ item.unidades }}</td>
+                                <td class="text-end pe-3 fw-bold">${{ item.recaudado|floatformat:2 }}</td>
+                            </tr>
+                            {% empty %}
+                            <tr><td colspan="3" class="text-center text-muted py-3">Sin datos en el período</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
     </div>
 </div>
 
-<div class="row g-4">
+<div class="row g-4 mb-4">
     <!-- PROVEEDORES -->
     <div class="col-12 col-lg-6">
         <div class="card border-0 shadow-sm h-100">
@@ -243,7 +419,7 @@
                     <tbody>
                         {% for vend in vendedores_top %}
                         <tr>
-                            <td class="ps-3 fw-semibold">{{ vend.vendedor__username|default:"Caja General" }}</td>
+                            <td class="ps-3 fw-semibold">{{ vend.nombre }}</td>
                             <td class="text-center">{{ vend.ventas_count }}</td>
                             <td class="text-end pe-3 fw-bold text-success">${{ vend.total_monto|floatformat:2 }}</td>
                         </tr>
@@ -257,10 +433,42 @@
     </div>
 </div>
 
+<!-- 🔽 NUEVO: POR CATEGORÍA -->
+{% if categorias_stats %}
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-body py-3 border-bottom">
+        <h6 class="fw-bold mb-0"><i class="fas fa-tags text-secondary me-2"></i> Ventas por Categoría / Rubro</h6>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th class="ps-3">Categoría</th>
+                        <th class="text-center">Unidades</th>
+                        <th class="text-end">Ganancia</th>
+                        <th class="text-end">Recaudado</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for c in categorias_stats %}
+                    <tr>
+                        <td class="ps-3 fw-semibold">{{ c.producto__categoria__nombre|default:"Sin categoría" }}</td>
+                        <td class="text-center">{{ c.unidades }}</td>
+                        <td class="text-end text-info">${{ c.ganancia|floatformat:2 }}</td>
+                        <td class="text-end fw-bold text-success">${{ c.recaudado|floatformat:2 }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
+
 <!-- SCRIPT: Alternar modo + Exportar Excel -->
 <script>
 document.addEventListener('DOMContentLoaded', function () {
-    // 🔽 Alternar entre "Por Mes/Año" y "Por Rango de Fechas"
     const modoSelect = document.getElementById('modo_select');
     const bloqueMes = document.getElementById('bloque_mes');
     const bloqueAnio = document.getElementById('bloque_anio');
@@ -280,17 +488,14 @@ document.addEventListener('DOMContentLoaded', function () {
             bloqueHasta.style.display = 'none';
         }
     }
-
     modoSelect.addEventListener('change', actualizarModo);
     actualizarModo();
 
-    // 🔽 Exportar a Excel (CSV)
     const btnExcel = document.getElementById('btn-excel');
     if (btnExcel) {
         btnExcel.addEventListener('click', function () {
             let csvContent = "\uFEFF";
             const tablas = document.querySelectorAll('table');
-
             tablas.forEach((tabla) => {
                 const filas = tabla.querySelectorAll('tr');
                 filas.forEach(fila => {

@@ -177,7 +177,7 @@ class CajaTurno(models.Model):
         related_name="turnos_caja",
     )
 
-    # 🔽 NUEVO: Sucursal donde se abre el turno
+    # 🔽 Sucursal donde se abre el turno
     sucursal = models.ForeignKey(
         'configuracion.Sucursal',
         on_delete=models.PROTECT,
@@ -226,6 +226,82 @@ class CajaTurno(models.Model):
     def __str__(self):
         suc = self.sucursal.nombre if self.sucursal else "Sin sucursal"
         return f"Turno #{self.id} ({self.get_tipo_caja_display()}) - {self.vendedor.username} @ {suc} [{self.estado}]"
+
+
+class InformeCaja(models.Model):
+    """
+    Registra los informes X (parciales) y Z (cierre) emitidos por turno.
+    """
+    TIPO_CHOICES = [
+        ('X', 'Informe X (Parcial)'),
+        ('Z', 'Cierre Z (Final)'),
+    ]
+
+    turno = models.ForeignKey(
+        CajaTurno,
+        on_delete=models.CASCADE,
+        related_name='informes',
+        verbose_name="Turno de Caja",
+    )
+    tipo = models.CharField(
+        "Tipo",
+        max_length=1,
+        choices=TIPO_CHOICES,
+        default='X',
+    )
+    numero = models.IntegerField(
+        "Número de Informe",
+        null=True,
+        blank=True,
+        help_text="Solo para Z. Numeración consecutiva por sucursal.",
+    )
+    fecha_emision = models.DateTimeField(
+        "Fecha de Emisión",
+        auto_now_add=True,
+    )
+    emitido_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='informes_emitidos',
+        verbose_name="Emitido por",
+    )
+
+    # Totales congelados al momento de emisión
+    total_efectivo = models.DecimalField("Efectivo", max_digits=12, decimal_places=2, default=0)
+    total_debito = models.DecimalField("Débito", max_digits=12, decimal_places=2, default=0)
+    total_credito = models.DecimalField("Crédito", max_digits=12, decimal_places=2, default=0)
+    total_transferencia = models.DecimalField("Transferencia", max_digits=12, decimal_places=2, default=0)
+    total_general = models.DecimalField("Total General", max_digits=12, decimal_places=2, default=0)
+    cantidad_operaciones = models.IntegerField("Cantidad de Operaciones", default=0)
+
+    # Solo aplican al Z
+    monto_inicial = models.DecimalField("Fondo Inicial", max_digits=12, decimal_places=2, default=0)
+    efectivo_esperado = models.DecimalField("Efectivo Esperado", max_digits=12, decimal_places=2, default=0)
+    efectivo_contado = models.DecimalField("Efectivo Contado", max_digits=12, decimal_places=2, default=0)
+    diferencia = models.DecimalField("Diferencia", max_digits=12, decimal_places=2, default=0)
+
+    observaciones = models.TextField("Observaciones", blank=True, null=True)
+
+    class Meta:
+        verbose_name = "Informe de Caja"
+        verbose_name_plural = "Informes de Caja"
+        ordering = ['-fecha_emision']
+        indexes = [
+            models.Index(fields=['turno', 'tipo']),
+            models.Index(fields=['tipo', 'numero']),
+        ]
+
+    def __str__(self):
+        tipo_display = self.get_tipo_display()
+        num = f" #{self.numero}" if self.numero else ""
+        return f"{tipo_display}{num} - Turno #{self.turno_id} - ${self.total_general}"
+
+    @property
+    def es_cierre_z(self):
+        """True si es un cierre Z."""
+        return self.tipo == 'Z'
 
 
 class Venta(models.Model):
@@ -280,7 +356,7 @@ class Venta(models.Model):
         related_name="ventas",
     )
 
-    # 🔽 NUEVO: Sucursal donde se generó la venta
+    # 🔽 Sucursal donde se generó la venta
     sucursal = models.ForeignKey(
         'configuracion.Sucursal',
         on_delete=models.PROTECT,
@@ -464,6 +540,59 @@ class Venta(models.Model):
             return delta.days
         return 0
 
+    # =========================================================
+    # HELPERS SEGUROS PARA COMPROBANTES (cliente puede ser None)
+    # =========================================================
+
+    @property
+    def cliente_nombre(self):
+        """Nombre del cliente o 'Consumidor Final' si es anónimo."""
+        if self.cliente:
+            return self.cliente.nombre
+        return "Consumidor Final"
+
+    @property
+    def cliente_documento(self):
+        """Número de documento o 'S/D' si es anónimo."""
+        if self.cliente and self.cliente.numero_documento:
+            return self.cliente.numero_documento
+        return "S/D"
+
+    @property
+    def cliente_tipo_documento(self):
+        """Tipo de documento (CUIT, DNI, etc.) o '-' si es anónimo."""
+        if self.cliente and self.cliente.tipo_documento:
+            return self.cliente.tipo_documento
+        return "-"
+
+    @property
+    def cliente_direccion(self):
+        """Dirección completa o '-' si es anónimo."""
+        if self.cliente:
+            return self.cliente.direccion_completa or "-"
+        return "-"
+
+    @property
+    def cliente_condicion_iva_display(self):
+        """Condición IVA legible o 'Consumidor Final' por defecto."""
+        if self.cliente:
+            return self.cliente.get_condicion_iva_display()
+        return "Consumidor Final"
+
+    @property
+    def cliente_telefono(self):
+        """Teléfono o '-' si es anónimo."""
+        if self.cliente:
+            return self.cliente.telefono or "-"
+        return "-"
+
+    @property
+    def cliente_email(self):
+        """Email o '-' si es anónimo."""
+        if self.cliente:
+            return self.cliente.email or "-"
+        return "-"
+
 
 class DetalleVenta(models.Model):
     venta = models.ForeignKey(
@@ -584,7 +713,11 @@ class StockABordo(models.Model):
 # =========================================================
 
 class PerfilRepartidor(models.Model):
-    """Datos extra del repartidor, vinculados 1-a-1 al User."""
+    """Datos extra del repartidor, vinculados 1-a-1 al User.
+
+    No se elimina nunca: se da de baja (activo=False) para conservar
+    el historial de ventas, entregas y liquidaciones.
+    """
     user = models.OneToOneField(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -608,10 +741,28 @@ class PerfilRepartidor(models.Model):
     activo = models.BooleanField("Activo", default=True)
     observaciones = models.TextField("Observaciones", blank=True, null=True)
 
+    # 🔽 Fecha en que se dio de baja (soft delete)
+    fecha_baja = models.DateTimeField(
+        "Fecha de Baja",
+        null=True,
+        blank=True,
+        help_text="Se completa cuando el repartidor se da de baja (no se elimina)."
+    )
+
     class Meta:
         verbose_name = "Repartidor"
         verbose_name_plural = "Repartidores"
+        ordering = ['-activo', 'user__first_name', 'user__last_name']
 
     def __str__(self):
         nombre = self.user.get_full_name() or self.user.username
-        return f"{nombre} - {self.vehiculo or 'Sin vehículo'}"
+        estado = "" if self.activo else " (BAJA)"
+        return f"{nombre} - {self.vehiculo or 'Sin vehículo'}{estado}"
+
+    @property
+    def nombre_completo(self):
+        return self.user.get_full_name() or self.user.username
+
+    @property
+    def esta_activo(self):
+        return self.activo

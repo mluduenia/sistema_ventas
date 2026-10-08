@@ -1,0 +1,136 @@
+{% extends 'base.html' %}
+
+{% block title %}Sucursales{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3">
+
+    <!-- ENCABEZADO -->
+    <div class="card border-0 shadow-sm mb-3">
+        <div class="card-body">
+            <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+                <h4 class="fw-bold m-0">
+                    <i class="fas fa-store text-primary me-2"></i> Sucursales
+                </h4>
+                <div class="d-flex gap-2">
+                    <a href="{% url 'configuracion:stock_por_sucursal' %}" class="btn btn-outline-info fw-bold">
+                        <i class="fas fa-boxes me-1"></i> Stock por Sucursal
+                    </a>
+                    <a href="{% url 'configuracion:crear_sucursal' %}" class="btn btn-success fw-bold">
+                        <i class="fas fa-plus-circle me-1"></i> Nueva Sucursal
+                    </a>
+                </div>
+            </div>
+
+            <!-- FILTROS -->
+            <form method="GET" class="row g-2">
+                <div class="col-md-6">
+                    <input type="text" name="q" class="form-control form-control-sm"
+                           placeholder="Buscar por nombre, dirección, teléfono..."
+                           value="{{ busqueda }}">
+                </div>
+                <div class="col-md-3 d-flex align-items-center">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" name="activa"
+                               value="1" id="chk_activa" {% if filtro_activa == '1' %}checked{% endif %}>
+                        <label class="form-check-label small" for="chk_activa">
+                            Solo activas
+                        </label>
+                    </div>
+                </div>
+                <div class="col-md-3 d-flex gap-1">
+                    <button type="submit" class="btn btn-sm btn-primary flex-grow-1">
+                        <i class="fas fa-search me-1"></i> Filtrar
+                    </button>
+                    <a href="{% url 'configuracion:lista_sucursales' %}" class="btn btn-sm btn-outline-secondary">
+                        <i class="fas fa-undo"></i>
+                    </a>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- TARJETAS DE SUCURSALES -->
+    <div class="row g-3">
+        {% for item in sucursales_con_kpis %}
+        <div class="col-12 col-md-6 col-lg-4">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-header bg-body py-3 border-bottom d-flex justify-content-between align-items-center">
+                    <h6 class="fw-bold mb-0 text-truncate">
+                        {% if item.sucursal.es_central %}
+                            <i class="fas fa-star text-primary me-1"></i>
+                        {% endif %}
+                        {{ item.sucursal.nombre }}
+                    </h6>
+                    {% if item.sucursal.activa %}
+                        <span class="badge bg-success">Activa</span>
+                    {% else %}
+                        <span class="badge bg-secondary">Inactiva</span>
+                    {% endif %}
+                </div>
+                <div class="card-body">
+                    <p class="small text-muted mb-3">
+                        <span class="badge bg-secondary">{{ item.sucursal.get_tipo_display }}</span>
+                        {% if item.sucursal.lista_precio %}
+                            <span class="badge bg-info text-dark ms-1">
+                                Lista: {{ item.sucursal.lista_precio.nombre }}
+                            </span>
+                        {% endif %}
+                    </p>
+
+                    <div class="row g-2">
+                        <div class="col-6">
+                            <div class="p-2 bg-body-tertiary rounded">
+                                <span class="small text-muted d-block">Facturado</span>
+                                <span class="fw-bold text-success">${{ item.total_ventas|floatformat:2 }}</span>
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <div class="p-2 bg-body-tertiary rounded">
+                                <span class="small text-muted d-block">Ventas</span>
+                                <span class="fw-bold">{{ item.cantidad_ventas }}</span>
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <div class="p-2 bg-body-tertiary rounded">
+                                <span class="small text-muted d-block">Clientes</span>
+                                <span class="fw-bold">{{ item.cantidad_clientes }}</span>
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <div class="p-2 bg-body-tertiary rounded">
+                                <span class="small text-muted d-block">Stock total</span>
+                                <span class="fw-bold">{{ item.total_stock }} u.</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    {% if item.sucursal.direccion %}
+                        <p class="small text-muted mt-3 mb-0">
+                            <i class="fas fa-map-marker-alt me-1"></i>
+                            {{ item.sucursal.direccion }}
+                        </p>
+                    {% endif %}
+                </div>
+                <div class="card-footer bg-body py-2 border-top d-flex justify-content-end">
+                    <a href="{% url 'configuracion:editar_sucursal' item.sucursal.id %}"
+                       class="btn btn-sm btn-outline-primary">
+                        <i class="fas fa-edit me-1"></i> Editar
+                    </a>
+                </div>
+            </div>
+        </div>
+        {% empty %}
+        <div class="col-12">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body text-center py-5 text-muted">
+                    <i class="fas fa-store fa-3x mb-3 d-block opacity-25"></i>
+                    <strong>No hay sucursales cargadas.</strong>
+                    <p class="mb-0 small">Clic en "Nueva Sucursal" para crear la primera.</p>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}
