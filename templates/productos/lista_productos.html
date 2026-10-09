@@ -86,7 +86,8 @@
                     </tr>
                 </thead>
                 <tbody>
-                    {% for prod in productos %}
+                    {% for item in productos_con_stock %}
+                        {% with prod=item.producto %}
                         <tr>
                             <td class="ps-3 text-danger fw-semibold">{{ prod.codigo_barra|default:"---" }}</td>
                             <td>
@@ -109,22 +110,67 @@
                             </td>
                             <td class="text-center">
                                 {% if prod.stock_actual <= prod.stock_minimo %}
-                                    <span class="badge bg-danger"><i class="fas fa-exclamation-triangle me-1"></i> {{ prod.stock_actual }}</span>
+                                    <span class="badge bg-danger">
+                                        <i class="fas fa-exclamation-triangle me-1"></i> {{ prod.stock_actual }}
+                                    </span>
                                 {% else %}
                                     <span class="badge bg-success">{{ prod.stock_actual }}</span>
                                 {% endif %}
+
+                                <!-- Desglose por sucursal -->
+                                {% if item.stocks %}
+                                    <div class="mt-1 d-flex flex-wrap gap-1 justify-content-center">
+                                        {% for st in item.stocks %}
+                                            {% if st.cantidad > 0 %}
+                                                <span class="badge bg-body-tertiary text-body border"
+                                                      style="font-size: 9px;"
+                                                      title="{{ st.sucursal.nombre }}: {{ st.cantidad }} unidades">
+                                                    {% if st.sucursal.es_central %}⭐{% endif %}{{ st.sucursal.nombre|truncatechars:8 }}: {{ st.cantidad }}
+                                                </span>
+                                            {% endif %}
+                                        {% endfor %}
+                                    </div>
+                                {% endif %}
                             </td>
                             {% if es_admin %}
-                            <td class="text-end pe-3">
-                                <a href="{% url 'productos:editar_producto' prod.id %}" class="btn btn-sm btn-outline-primary me-1" title="Editar">
+                            <td class="text-end pe-3 text-nowrap">
+
+                                <!-- 📦 Cargar stock -->
+                                <a href="{% url 'productos:cargar_stock_sucursal' prod.id %}"
+                                   class="btn btn-sm btn-outline-success me-1"
+                                   title="Cargar stock en una sucursal">
+                                    <i class="fas fa-boxes"></i>
+                                </a>
+
+                                <!-- ✏️ Editar -->
+                                <a href="{% url 'productos:editar_producto' prod.id %}"
+                                   class="btn btn-sm btn-outline-primary me-1" title="Editar">
                                     <i class="fas fa-edit"></i>
                                 </a>
-                                <a href="{% url 'productos:eliminar_producto' prod.id %}" class="btn btn-sm btn-outline-danger" title="Eliminar">
+
+                                <!-- 🗑️ Dar de baja / ♻️ Reactivar -->
+                                {% if prod.activo %}
+                                <button type="button"
+                                        class="btn btn-sm btn-outline-danger btn-baja-producto"
+                                        data-id="{{ prod.id }}"
+                                        data-nombre="{{ prod.nombre }}"
+                                        title="Dar de baja">
                                     <i class="fas fa-trash"></i>
-                                </a>
+                                </button>
+                                {% else %}
+                                <button type="button"
+                                        class="btn btn-sm btn-outline-success btn-reactivar-producto"
+                                        data-id="{{ prod.id }}"
+                                        data-nombre="{{ prod.nombre }}"
+                                        title="Reactivar">
+                                    <i class="fas fa-recycle"></i>
+                                </button>
+                                {% endif %}
+
                             </td>
                             {% endif %}
                         </tr>
+                        {% endwith %}
                     {% empty %}
                         <tr>
                             <td colspan="{% if es_admin %}8{% else %}7{% endif %}" class="text-center text-muted py-5">
@@ -138,4 +184,71 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+
+    // ============================================================
+    // DAR DE BAJA PRODUCTO (soft delete)
+    // ============================================================
+    document.querySelectorAll('.btn-baja-producto').forEach(btn => {
+        btn.addEventListener('click', async function() {
+            const id = this.dataset.id;
+            const nombre = this.dataset.nombre;
+
+            const ok = await confirmAsync(
+                `¿Dar de baja el producto "${nombre}"?\n\nNo se elimina: se marca como inactivo y se conserva todo el historial. Podés reactivarlo después.`,
+                { tipo: 'danger', textoAceptar: 'Dar de baja', textoCancelar: 'Cancelar' }
+            );
+
+            if (!ok) return;
+
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = "{% url 'productos:eliminar_producto' 0 %}".replace('0', id);
+
+            const csrf = document.createElement('input');
+            csrf.type = 'hidden';
+            csrf.name = 'csrfmiddlewaretoken';
+            csrf.value = '{{ csrf_token }}';
+            form.appendChild(csrf);
+
+            document.body.appendChild(form);
+            form.submit();
+        });
+    });
+
+    // ============================================================
+    // REACTIVAR PRODUCTO
+    // ============================================================
+    document.querySelectorAll('.btn-reactivar-producto').forEach(btn => {
+        btn.addEventListener('click', async function() {
+            const id = this.dataset.id;
+            const nombre = this.dataset.nombre;
+
+            const ok = await confirmAsync(
+                `¿Reactivar el producto "${nombre}"?\n\nVolverá a aparecer en el POS y en las listas.`,
+                { tipo: 'success', textoAceptar: 'Reactivar', textoCancelar: 'Cancelar' }
+            );
+
+            if (!ok) return;
+
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = "{% url 'productos:reactivar_producto' 0 %}".replace('0', id);
+
+            const csrf = document.createElement('input');
+            csrf.type = 'hidden';
+            csrf.name = 'csrfmiddlewaretoken';
+            csrf.value = '{{ csrf_token }}';
+            form.appendChild(csrf);
+
+            document.body.appendChild(form);
+            form.submit();
+        });
+    });
+});
+</script>
 {% endblock %}

@@ -16,24 +16,44 @@
                 </a>
             </div>
 
+            <!-- FILTROS -->
             <form method="GET" class="row g-2">
-                <div class="col-md-5">
+                <div class="col-md-4">
                     <input type="text" name="q" class="form-control form-control-sm"
                            placeholder="Buscar por nombre o código de barras..."
                            value="{{ busqueda }}">
                 </div>
-                <div class="col-md-3 d-flex align-items-center">
+                <div class="col-md-3">
+                    <select name="sucursal" class="form-select form-select-sm">
+                        <option value="">-- Todas las sucursales --</option>
+                        {% for s in todas_sucursales %}
+                            <option value="{{ s.id }}" {% if sucursal_id == s.id|stringformat:"s" %}selected{% endif %}>
+                                {% if s.es_central %}⭐ {% endif %}{{ s.nombre }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2 d-flex align-items-center">
                     <div class="form-check">
                         <input class="form-check-input" type="checkbox" name="bajo_stock"
                                value="1" id="chk_bajo" {% if solo_bajo_stock %}checked{% endif %}>
                         <label class="form-check-label small" for="chk_bajo">
-                            Solo con stock bajo
+                            Stock bajo
                         </label>
                     </div>
                 </div>
-                <div class="col-md-4 d-flex gap-1">
+                <div class="col-md-2 d-flex align-items-center">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" name="sin_stock"
+                               value="1" id="chk_sin" {% if solo_sin_stock %}checked{% endif %}>
+                        <label class="form-check-label small" for="chk_sin">
+                            Sin stock
+                        </label>
+                    </div>
+                </div>
+                <div class="col-md-1 d-flex gap-1">
                     <button type="submit" class="btn btn-sm btn-primary flex-grow-1">
-                        <i class="fas fa-search me-1"></i> Filtrar
+                        <i class="fas fa-search"></i>
                     </button>
                     <a href="{% url 'configuracion:stock_por_sucursal' %}" class="btn btn-sm btn-outline-secondary">
                         <i class="fas fa-undo"></i>
@@ -43,16 +63,25 @@
         </div>
     </div>
 
+    <!-- LEYENDA -->
+    <div class="d-flex gap-3 mb-2 small flex-wrap">
+        <span><span class="badge bg-success">10</span> Stock OK</span>
+        <span><span class="badge bg-warning text-dark">3</span> Stock bajo</span>
+        <span><span class="badge bg-danger">0</span> Sin stock</span>
+        <span class="text-muted ms-auto">Mostrando {{ total_productos }} producto{{ total_productos|pluralize }}</span>
+    </div>
+
+    <!-- TABLA -->
     <div class="card border-0 shadow-sm">
         <div class="card-body p-0">
             <div class="table-responsive">
                 <table class="table table-hover align-middle mb-0">
-                    <thead class="table-light">
+                    <thead class="table-dark">
                         <tr>
                             <th class="ps-3">Producto</th>
                             {% for s in sucursales %}
                                 <th class="text-center">
-                                    {% if s.es_central %}<i class="fas fa-star text-primary me-1"></i>{% endif %}
+                                    {% if s.es_central %}<i class="fas fa-star text-warning me-1"></i>{% endif %}
                                     {{ s.nombre }}
                                 </th>
                             {% endfor %}
@@ -70,12 +99,14 @@
                             </td>
                             {% for st in fila.stocks %}
                                 <td class="text-center">
-                                    {% if st.bajo %}
-                                        <span class="badge bg-danger">{{ st.cantidad }}</span>
-                                    {% elif st.cantidad == 0 %}
-                                        <span class="text-muted">0</span>
+                                    {% if st.sin_stock %}
+                                        <span class="badge bg-danger">0</span>
+                                    {% elif st.bajo %}
+                                        <span class="badge bg-warning text-dark" title="Stock bajo (mín: {{ st.stock_minimo }})">
+                                            {{ st.cantidad }}
+                                        </span>
                                     {% else %}
-                                        <span class="fw-bold">{{ st.cantidad }}</span>
+                                        <span class="badge bg-success">{{ st.cantidad }}</span>
                                     {% endif %}
                                 </td>
                             {% endfor %}
@@ -94,5 +125,6 @@
             </div>
         </div>
     </div>
+
 </div>
 {% endblock %}

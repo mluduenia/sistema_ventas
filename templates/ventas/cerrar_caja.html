@@ -94,8 +94,7 @@
 
                     <div class="d-flex gap-2">
                         <a href="{% url 'ventas:pos' %}" class="btn btn-secondary btn-lg fw-bold w-50">Cancelar</a>
-                        <button type="submit" class="btn btn-danger btn-lg fw-bold w-50 shadow-sm"
-                                onclick="return confirm('⚠️ ESTO CIERRA EL TURNO DEFINITIVAMENTE.\n\nSe va a emitir el Informe Z.\n¿Confirmás el cierre?');">
+                        <button type="submit" id="btn-cierre" class="btn btn-danger btn-lg fw-bold w-50 shadow-sm">
                             <i class="fas fa-lock me-2"></i> Cerrar Caja y Emitir Z
                         </button>
                     </div>
@@ -108,18 +107,135 @@
 
 {% block extra_js %}
 <script>
-    const esperado = {{ efectivo_esperado|default:0 }};
-    const input = document.getElementById('monto_final_efectivo');
-    const display = document.getElementById('diferencia_display');
+    // =========================================================
+    // DIFERENCIA EN VIVO
+    // =========================================================
+    (function() {
+        const esperadoRaw = "{{ efectivo_esperado|default:0 }}".replace(",", ".");
+        const esperado = parseFloat(esperadoRaw) || 0;
 
-    if (input && display) {
-        input.addEventListener('input', function () {
-            const contado = parseFloat(this.value) || 0;
-            const dif = contado - esperado;
-            display.textContent = (dif >= 0 ? '$' : '-$') + Math.abs(dif).toFixed(2);
-            display.className = 'fw-bold fs-4 ' +
-                (dif === 0 ? 'text-success' : (dif > 0 ? 'text-info' : 'text-danger'));
-        });
-    }
+        const input = document.getElementById('monto_final_efectivo');
+        const display = document.getElementById('diferencia_display');
+
+        if (input && display) {
+            input.addEventListener('input', function () {
+                const contado = parseFloat(this.value) || 0;
+                const dif = contado - esperado;
+                display.textContent = (dif >= 0 ? '$' : '-$') + Math.abs(dif).toFixed(2);
+                display.className = 'fw-bold fs-4 ' +
+                    (dif === 0 ? 'text-success' : (dif > 0 ? 'text-info' : 'text-danger'));
+            });
+        }
+    })();
+
+    // =========================================================
+    // CIERRE DE CAJA + IMPRESIÓN DIRECTA DEL Z
+    // =========================================================
+    (function() {
+        'use strict';
+
+        let confirmado = false;
+        let enviando = false;
+
+        document.addEventListener('submit', async function(e) {
+            const form = e.target;
+            if (!form || form.id !== 'form-cierre') return;
+
+            e.preventDefault();
+            e.stopPropagation();
+
+            if (enviando) return;
+
+            if (confirmado) {
+                enviando = true;
+                enviarFormulario(form);
+                return;
+            }
+
+            // Modal de confirmación
+            if (typeof window.confirmAsync !== 'function') {
+                if (window.confirm('⚠️ ESTO CIERRA EL TURNO DEFINITIVAMENTE.\n\nSe va a emitir el Informe Z.\n¿Confirmás el cierre?')) {
+                    confirmado = true;
+                    enviando = true;
+                    enviarFormulario(form);
+                }
+                return;
+            }
+
+            const ok = await window.confirmAsync(
+                '⚠️ ESTO CIERRA EL TURNO DEFINITIVAMENTE.\n\nSe va a emitir el Informe Z.\n¿Confirmás el cierre?',
+                { tipo: 'danger', textoAceptar: 'Cerrar Turno', textoCancelar: 'Cancelar' }
+            );
+
+            if (ok) {
+                confirmado = true;
+                enviando = true;
+                enviarFormulario(form);
+            }
+        }, true);
+
+        /**
+         * Envía el form por AJAX, recibe el texto del Z y lo imprime directo.
+         */
+        async function enviarFormulario(form) {
+            const formData = new FormData(form);
+
+            try {
+                // 1. Cerrar turno en el backend
+                const response = await fetch(window.location.href, {
+                    method: 'POST',
+                    body: formData,
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'Cache-Control': 'no-cache',
+                    },
+                    credentials: 'same-origin',
+                    cache: 'no-store',
+                });
+
+                if (!response.ok) {
+                    throw new Error('Error HTTP ' + response.status);
+                }
+
+                const data = await response.json();
+
+                if (data.status !== 'success' || !data.informe_texto) {
+                    alert('Error: ' + (data.message || 'No se pudo cerrar la caja'));
+                    confirmado = false;
+                    enviando = false;
+                    return;
+                }
+
+                // 2. Imprimir directo al servicio térmico (sin abrir pestaña)
+                const printResp = await fetch('http://127.0.0.1:8085/print', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        contenido: data.informe_texto,
+                        tipo: 'informe_z',
+                        cortar: true,
+                        modo: 'texto',
+                    }),
+                });
+
+                const printData = await printResp.json();
+
+                // 3. Redirigir al dashboard
+                if (printData.success) {
+                    console.log('[Cierre Z] Impreso OK');
+                } else {
+                    console.warn('[Cierre Z] No se pudo imprimir:', printData.error);
+                }
+
+                window.location.href = "{% url 'core:dashboard' %}";
+
+            } catch (err) {
+                console.error('[cerrar_caja] Error:', err);
+                alert('Error al cerrar la caja: ' + err.message);
+                confirmado = false;
+                enviando = false;
+            }
+        }
+    })();
 </script>
 {% endblock %}

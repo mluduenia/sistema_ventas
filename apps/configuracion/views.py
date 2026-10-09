@@ -233,10 +233,16 @@ def stock_por_sucursal_view(request):
     sucursal_id = request.GET.get('sucursal', '').strip()
     busqueda = request.GET.get('q', '').strip()
     solo_bajo_stock = request.GET.get('bajo_stock', '') == '1'
+    solo_sin_stock = request.GET.get('sin_stock', '') == '1'
 
     sucursales = Sucursal.objects.filter(activa=True).order_by('-es_central', 'nombre')
 
-    productos = Producto.objects.filter(activo=True).select_related('categoria')
+    # Filtrar por sucursal específica si se pidió
+    sucursales_mostrar = sucursales
+    if sucursal_id:
+        sucursales_mostrar = sucursales.filter(id=sucursal_id)
+
+    productos = Producto.objects.filter(activo=True).select_related('categoria').order_by('nombre')
 
     if busqueda:
         productos = productos.filter(
@@ -244,36 +250,51 @@ def stock_por_sucursal_view(request):
             Q(codigo_barra__icontains=busqueda)
         )
 
+    # Traer todos los stocks de una sola vez (más eficiente)
+    stocks_dict = {}
+    for ss in StockSucursal.objects.select_related('sucursal').all():
+        key = (ss.producto_id, ss.sucursal_id)
+        stocks_dict[key] = ss
+
     resultados = []
-    for p in productos[:200]:
+    for p in productos[:500]:
         fila = {
             'producto': p,
             'stocks': [],
         }
         total = 0
-        for s in sucursales:
-            ss = StockSucursal.objects.filter(producto=p, sucursal=s).first()
+        for s in sucursales_mostrar:
+            ss = stocks_dict.get((p.id, s.id))
             cantidad = ss.cantidad if ss else 0
+            stock_minimo = ss.stock_minimo if ss else 5
             total += cantidad
             fila['stocks'].append({
                 'sucursal': s,
                 'cantidad': cantidad,
-                'bajo': cantidad <= (ss.stock_minimo if ss else 5),
+                'stock_minimo': stock_minimo,
+                'bajo': 0 < cantidad <= stock_minimo,
+                'sin_stock': cantidad == 0,
+                'ok': cantidad > stock_minimo,
             })
         fila['total'] = total
 
-        if solo_bajo_stock:
-            if any(x['bajo'] for x in fila['stocks']):
-                resultados.append(fila)
-        else:
-            resultados.append(fila)
+        # Filtros de fila
+        if solo_bajo_stock and not any(x['bajo'] for x in fila['stocks']):
+            continue
+        if solo_sin_stock and not any(x['sin_stock'] for x in fila['stocks']):
+            continue
+
+        resultados.append(fila)
 
     context = {
-        'sucursales': sucursales,
+        'sucursales': sucursales_mostrar,
+        'todas_sucursales': sucursales,
         'resultados': resultados,
         'busqueda': busqueda,
         'sucursal_id': sucursal_id,
         'solo_bajo_stock': solo_bajo_stock,
+        'solo_sin_stock': solo_sin_stock,
+        'total_productos': len(resultados),
     }
     return render(request, 'configuracion/stock_por_sucursal.html', context)
 

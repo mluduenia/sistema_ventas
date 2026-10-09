@@ -119,20 +119,14 @@
                     </a>
                     <div class="collapse {% if 'sucursal' in request.path or 'clientes' in request.path or 'repartidores' in request.path %}show{% endif %}" id="submenuConfigVentas">
                         <nav class="nav nav-pills flex-column ps-3 gap-1 mt-1">
-
-                            {# Sucursales: solo si el módulo multi-sucursal está activo #}
                             {% if modulos.multi_sucursal %}
                             <a href="{% url 'configuracion:lista_sucursales' %}" class="nav-link text-white-50 py-1 px-3 rounded small {% if 'sucursal' in request.path %}active text-white{% endif %}">
                                 <i class="fas fa-store me-2"></i> Sucursales
                             </a>
                             {% endif %}
-
-                            {# Clientes: siempre #}
                             <a href="{% url 'ventas:lista_clientes' %}" class="nav-link text-white-50 py-1 px-3 rounded small {% if 'clientes' in request.path %}active text-white{% endif %}">
                                 <i class="fas fa-users me-2"></i> Clientes
                             </a>
-
-                            {# Repartidores: solo si el módulo reparto está activo #}
                             {% if modulos.reparto %}
                             {% if request.user.is_superuser or request.user.rol == 'gerente' or request.user.rol == 'cajero' %}
                             <a href="{% url 'ventas:lista_repartidores' %}" class="nav-link text-white-50 py-1 px-3 rounded small {% if 'repartidores' in request.path %}active text-white{% endif %}">
@@ -140,7 +134,6 @@
                             </a>
                             {% endif %}
                             {% endif %}
-
                         </nav>
                     </div>
                 </div>
@@ -373,9 +366,155 @@
     </div>
 </div>
 
+<!-- ========================================================= -->
+<!-- MODALES Y OVERRIDES DE alert() / confirm()                 -->
+<!-- ========================================================= -->
+
+<!-- MODAL PARA alert() -->
+<div class="modal fade" id="modal-alerta-generico" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title fw-bold">
+                    <i class="fas fa-info-circle me-2"></i> Aviso del Sistema
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+                <p class="mb-0" id="modal-alerta-texto"></p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-primary fw-bold" data-bs-dismiss="modal" id="modal-alerta-ok">
+                    Aceptar
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL PARA confirm() -->
+<div class="modal fade" id="modal-confirm-generico" tabindex="-1" aria-hidden="true" data-bs-backdrop="static">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg">
+            <div class="modal-header bg-warning text-dark">
+                <h5 class="modal-title fw-bold">
+                    <i class="fas fa-question-circle me-2"></i> Confirmación
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+                <p class="mb-0" id="modal-confirm-texto"></p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary fw-bold" data-bs-dismiss="modal" id="modal-confirm-cancelar">
+                    <i class="fas fa-times me-1"></i> Cancelar
+                </button>
+                <button type="button" class="btn btn-danger fw-bold" id="modal-confirm-aceptar">
+                    <i class="fas fa-check me-1"></i> Aceptar
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- JS Bootstrap & Lógica Modo Día/Noche -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 <script>
+    // =========================================================
+    // OVERRIDE GLOBAL DE window.alert()
+    // =========================================================
+    (function() {
+        const alertaOriginal = window.alert;
+
+        window.alert = function(mensaje) {
+            const modalEl = document.getElementById('modal-alerta-generico');
+            if (!modalEl) {
+                return alertaOriginal.apply(this, arguments);
+            }
+
+            const textoEl = document.getElementById('modal-alerta-texto');
+            if (textoEl) {
+                textoEl.textContent = mensaje;
+            }
+
+            const header = modalEl.querySelector('.modal-header');
+            const titulo = modalEl.querySelector('.modal-title');
+            const msg = String(mensaje || '').toLowerCase();
+
+            if (msg.includes('error') || msg.includes('no se pudo') || msg.includes('inválido')) {
+                header.className = 'modal-header bg-danger text-white';
+                titulo.innerHTML = '<i class="fas fa-exclamation-triangle me-2"></i> Error';
+            } else if (msg.includes('atención') || msg.includes('cuidado') || msg.includes('tenés que')) {
+                header.className = 'modal-header bg-warning text-dark';
+                titulo.innerHTML = '<i class="fas fa-exclamation-circle me-2"></i> Atención';
+            } else if (msg.includes('listo') || msg.includes('correctamente') || msg.includes('éxito')) {
+                header.className = 'modal-header bg-success text-white';
+                titulo.innerHTML = '<i class="fas fa-check-circle me-2"></i> Listo';
+            } else {
+                header.className = 'modal-header bg-primary text-white';
+                titulo.innerHTML = '<i class="fas fa-info-circle me-2"></i> Aviso';
+            }
+
+            const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+            modal.show();
+        };
+    })();
+
+    // =========================================================
+    // CONFIRM ASYNC - reemplazo de confirm() con Promise
+    // =========================================================
+    window.confirmAsync = function(mensaje, opciones = {}) {
+        return new Promise((resolve) => {
+            const modalEl = document.getElementById('modal-confirm-generico');
+            if (!modalEl) {
+                resolve(window.confirm(mensaje));
+                return;
+            }
+
+            document.getElementById('modal-confirm-texto').innerHTML = String(mensaje).replace(/\n/g, '<br>');
+
+            const btnAceptar = document.getElementById('modal-confirm-aceptar');
+            const btnCancelar = document.getElementById('modal-confirm-cancelar');
+
+            const textoAceptar = opciones.textoAceptar || 'Aceptar';
+            const textoCancelar = opciones.textoCancelar || 'Cancelar';
+            const tipo = opciones.tipo || 'danger';
+
+            btnAceptar.className = `btn btn-${tipo} fw-bold`;
+            btnAceptar.innerHTML = `<i class="fas fa-check me-1"></i> ${textoAceptar}`;
+            btnCancelar.className = 'btn btn-secondary fw-bold';
+            btnCancelar.innerHTML = `<i class="fas fa-times me-1"></i> ${textoCancelar}`;
+
+            // Eliminar listeners previos clonando
+            const newAceptar = btnAceptar.cloneNode(true);
+            const newCancelar = btnCancelar.cloneNode(true);
+            btnAceptar.replaceWith(newAceptar);
+            btnCancelar.replaceWith(newCancelar);
+
+            const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+
+            newAceptar.addEventListener('click', () => {
+                modal.hide();
+                resolve(true);
+            });
+
+            newCancelar.addEventListener('click', () => {
+                modal.hide();
+                resolve(false);
+            });
+
+            modalEl.addEventListener('hidden.bs.modal', function onHidden() {
+                modalEl.removeEventListener('hidden.bs.modal', onHidden);
+                resolve(false);
+            }, { once: true });
+
+            modal.show();
+        });
+    };
+
+    // =========================================================
+    // FUNCIONES DE LA APP (tema, inputs, etc.)
+    // =========================================================
     const htmlEl = document.documentElement;
     const themeBtn = document.getElementById('btnThemeToggle');
     const themeIcon = document.getElementById('themeIcon');
@@ -410,6 +549,96 @@
             e.preventDefault();
         }
     });
+        // =========================================================
+    // IMPRESIÓN TÉRMICA - Servicio local en 127.0.0.1:8085
+    // =========================================================
+
+    window.servicioImpresionDisponible = async function() {
+        try {
+            const resp = await fetch('http://127.0.0.1:8085/health', {
+                method: 'GET',
+                cache: 'no-store',
+            });
+            return resp.ok;
+        } catch {
+            return false;
+        }
+    };
+
+    window.imprimirTicket = async function(contenidoHTML, opciones = {}) {
+        const config = {
+            tipo: 'ticket',
+            cortar: true,
+            abrirCajon: false,
+            impresora: '',
+            ...opciones,
+        };
+
+        try {
+            const response = await fetch('http://127.0.0.1:8085/print', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    contenido: contenidoHTML,
+                    tipo: config.tipo,
+                    cortar: config.cortar,
+                    abrir_cajon: config.abrirCajon,
+                    impresora: config.impresora || undefined,
+                }),
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                return {
+                    success: false,
+                    error: `HTTP ${response.status}: ${errorText}`,
+                };
+            }
+
+            const data = await response.json();
+            return data;
+        } catch (err) {
+            return {
+                success: false,
+                error: `Error de conexión: ${err.message}. ¿El servicio está corriendo?`,
+            };
+        }
+    };
+
+    window.imprimirConFeedback = async function(boton, tipo = 'ticket') {
+        const textoOriginal = boton.innerHTML;
+
+        const disponible = await window.servicioImpresionDisponible();
+
+        if (!disponible) {
+            if (confirm(
+                '⚠️ Servicio de impresión no disponible.\n\n' +
+                '¿Querés usar la impresión tradicional del navegador?'
+            )) {
+                window.print();
+            }
+            return;
+        }
+
+        boton.disabled = true;
+        boton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Imprimiendo...';
+
+        const contenidoHTML = document.documentElement.outerHTML;
+
+        const resultado = await window.imprimirTicket(contenidoHTML, {tipo});
+
+        if (resultado.success) {
+            boton.innerHTML = '<i class="fas fa-check"></i> ¡Impreso!';
+            setTimeout(() => {
+                boton.innerHTML = textoOriginal;
+                boton.disabled = false;
+            }, 2000);
+        } else {
+            alert('Error al imprimir:\n\n' + resultado.error);
+            boton.innerHTML = textoOriginal;
+            boton.disabled = false;
+        }
+    };
 </script>
 
 {% block extra_js %}{% endblock %}

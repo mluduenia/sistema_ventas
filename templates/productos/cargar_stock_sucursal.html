@@ -1,0 +1,81 @@
+{% extends 'base.html' %}
+
+{% block title %}Cargar Stock - {{ producto.nombre }}{% endblock %}
+
+{% block content %}
+<div class="container py-3">
+    <div class="row justify-content-center">
+        <div class="col-12 col-lg-7">
+
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-primary text-white py-3 d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0 fw-bold">
+                        <i class="fas fa-boxes me-2"></i> Cargar Stock
+                    </h5>
+                    <a href="{% url 'productos:lista_productos' %}" class="btn btn-sm btn-light fw-bold">
+                        <i class="fas fa-arrow-left me-1"></i> Volver
+                    </a>
+                </div>
+                <div class="card-body p-4">
+
+                    <!-- Info del producto -->
+                    <div class="p-3 bg-body-tertiary rounded mb-4">
+                        <h6 class="fw-bold mb-1">{{ producto.nombre }}</h6>
+                        {% if producto.codigo_barra %}
+                            <small class="text-muted d-block">Cod: {{ producto.codigo_barra }}</small>
+                        {% endif %}
+                        <small class="text-muted d-block">
+                            Stock total actual: <strong>{{ producto.stock_actual }}</strong>
+                        </small>
+                    </div>
+
+                    <!-- Formulario -->
+                    <form method="POST">
+                        {% csrf_token %}
+
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Sucursal <span class="text-danger">*</span></label>
+                            <select name="sucursal" class="form-select" required>
+                                <option value="">-- Elegir sucursal --</option>
+                                {% for s in sucursales %}
+                                    <option value="{{ s.id }}" data-stock="{{ stock_actual|default_if_none:0 }}">
+                                        {% if s.es_central %}⭐ {% endif %}{{ s.nombre }}
+                                        (actual: {% if s.id in stock_actual.keys %}{{ stock_actual|default_if_none:0 }}{% else %}0{% endif %})
+                                    </option>
+                                {% endfor %}
+                            </select>
+                            <small class="text-muted">Podés ver el stock actual de cada sucursal al lado del nombre.</small>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Cantidad <span class="text-danger">*</span></label>
+                            <input type="number" name="cantidad" class="form-control form-control-lg text-center"
+                                   placeholder="0" required autofocus>
+                            <small class="text-muted">
+                                Usá números positivos para agregar (<strong>+10</strong>) o negativos para restar (<strong>-5</strong>).
+                            </small>
+                        </div>
+
+                        <div class="mb-4">
+                            <label class="form-label fw-bold">Motivo</label>
+                            <input type="text" name="motivo" class="form-control"
+                                   value="Carga inicial"
+                                   placeholder="Ej: Compra a proveedor, Devolución, Ajuste por inventario...">
+                        </div>
+
+                        <div class="d-flex justify-content-end gap-2 border-top pt-3">
+                            <a href="{% url 'productos:lista_productos' %}" class="btn btn-secondary px-4">
+                                Cancelar
+                            </a>
+                            <button type="submit" class="btn btn-success px-4 fw-bold">
+                                <i class="fas fa-save me-1"></i> Guardar Stock
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+        </div>
+    </div>
+</div>
+{% endblock %}

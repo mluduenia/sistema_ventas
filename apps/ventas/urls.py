@@ -37,4 +37,5 @@ urlpatterns = [
     path('informe-x/', views.informe_x_view, name='informe_x'),
     path('informe/<int:informe_id>/imprimir/', views.imprimir_informe_view, name='imprimir_informe'),
     path('informes/', views.lista_informes_view, name='lista_informes'),
+    path('ticket-texto/<int:venta_id>/', views.ticket_texto_ajax, name='ticket_texto_ajax'),
 ]

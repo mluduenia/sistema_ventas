@@ -73,7 +73,7 @@
                             </td>
                             <td class="fw-bold text-success">${{ v.total }}</td>
                             <td><small class="badge bg-outline-dark border text-dark">{{ v.get_metodo_pago_display }}</small></td>
-                            
+
                             <!-- COLUMNA DE ESTADO CON CÓDIGO DE COLORES -->
                             <td class="text-center">
                                 <span class="badge bg-{{ v.badge_color }} px-2 py-1 fs-6">
@@ -89,10 +89,12 @@
                             <!-- ACCIONES Y EMISIÓN DE FACTURA LOCAL -->
                             <td class="text-center">
                                 <div class="btn-group btn-group-sm">
-                                    <a href="{% url 'ventas:comprobante_factura' v.id %}" target="_blank" class="btn btn-outline-primary" title="Ver Documento A4 / Remito">
+                                    <a href="{% url 'ventas:comprobante_factura' v.id %}" target="_blank"
+                                       class="btn btn-outline-primary" title="Ver Factura / Remito (A4)">
                                         <i class="fas fa-file-invoice"></i>
                                     </a>
-                                    <a href="{% url 'ventas:comprobante_ticket' v.id %}" target="_blank" class="btn btn-outline-secondary" title="Ver Ticket Térmico">
+                                    <a href="{% url 'ventas:comprobante_ticket' v.id %}" target="_blank"
+                                       class="btn btn-outline-secondary" title="Ver Ticket Térmico">
                                         <i class="fas fa-receipt"></i>
                                     </a>
                                 </div>

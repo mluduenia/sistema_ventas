@@ -312,7 +312,7 @@ document.addEventListener('DOMContentLoaded', function () {
     // FACTURAR SELECCIONADOS
     // =========================================================
     if (btnFacturar) {
-        btnFacturar.addEventListener('click', function () {
+        btnFacturar.addEventListener('click', async function () {  // 🔽 CAMBIADO: async
             const seleccionados = Array.from(checkboxes).filter(c => c.checked);
             if (seleccionados.length === 0) return;
 
@@ -329,9 +329,15 @@ document.addEventListener('DOMContentLoaded', function () {
 
             const ids = seleccionados.map(c => c.value);
 
-            const confirmar = confirm(
-                '¿Facturar ' + ids.length + ' remito(s)?\n\n' +
-                'Remitos: #' + ids.join(', #')
+            // 🔽 CAMBIADO: confirmAsync en lugar de confirm()
+            const confirmar = await confirmAsync(
+                '¿Facturar ' + ids.length + ' remito(s)?<br><br>' +
+                'Remitos: <strong>#' + ids.join(', #') + '</strong>',
+                {
+                    textoAceptar: 'Sí, facturar',
+                    textoCancelar: 'Cancelar',
+                    tipo: 'success',
+                }
             );
             if (!confirmar) return;
 
@@ -387,10 +393,18 @@ document.addEventListener('DOMContentLoaded', function () {
     // FACTURAR INDIVIDUAL
     // =========================================================
     document.querySelectorAll('.btn-facturar-individual').forEach(btn => {
-        btn.addEventListener('click', function () {
+        btn.addEventListener('click', async function () {  // 🔽 CAMBIADO: async
             const remitoId = this.dataset.remitoId;
 
-            const confirmar = confirm('¿Facturar el remito #' + remitoId + '?');
+            // 🔽 CAMBIADO: confirmAsync en lugar de confirm()
+            const confirmar = await confirmAsync(
+                '¿Facturar el remito <strong>#' + remitoId + '</strong>?',
+                {
+                    textoAceptar: 'Sí, facturar',
+                    textoCancelar: 'Cancelar',
+                    tipo: 'success',
+                }
+            );
             if (!confirmar) return;
 
             this.disabled = true;
@@ -445,10 +459,18 @@ document.addEventListener('DOMContentLoaded', function () {
     // MARCAR COMO ENTREGADO (admin)
     // =========================================================
     document.querySelectorAll('.btn-marcar-entregado').forEach(btn => {
-        btn.addEventListener('click', function () {
+        btn.addEventListener('click', async function () {  // 🔽 CAMBIADO: async
             const remitoId = this.dataset.remitoId;
 
-            const confirmar = confirm('¿Marcar el remito #' + remitoId + ' como ENTREGADO?');
+            // 🔽 CAMBIADO: confirmAsync en lugar de confirm()
+            const confirmar = await confirmAsync(
+                '¿Marcar el remito <strong>#' + remitoId + '</strong> como ENTREGADO?',
+                {
+                    textoAceptar: 'Sí, marcar entregado',
+                    textoCancelar: 'Cancelar',
+                    tipo: 'success',
+                }
+            );
             if (!confirmar) return;
 
             this.disabled = true;

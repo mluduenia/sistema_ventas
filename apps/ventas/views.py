@@ -4,6 +4,8 @@ import os
 from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
 from functools import wraps
+from django.http import JsonResponse
+from django.urls import reverse
 
 from apps.configuracion.audit import registrar_log
 from django.conf import settings
@@ -126,8 +128,9 @@ def lista_ventas_view(request):
 @solo_no_repartidor
 def buscar_producto_ajax(request):
     """Búsqueda de productos. Devuelve precio según la lista de la sucursal
-    del turno activo, y el stock de esa sucursal."""
+    del turno activo, y el stock de esa sucursal + stock de otras sucursales."""
     from apps.productos.models import PrecioProducto, StockSucursal
+    from apps.configuracion.models import Sucursal
 
     term = request.GET.get('term', '').strip()
     if not term:
@@ -147,9 +150,14 @@ def buscar_producto_ajax(request):
         codigo_barra__exact=term
     )
 
+    # Traer todas las sucursales activas (para el stock cruzado)
+    sucursales_activas = Sucursal.objects.filter(activa=True).order_by('-es_central', 'nombre')
+
     resultados = []
     for p in productos[:10]:
-        # Precio según la lista de la sucursal
+        # ============================================================
+        # PRECIO según la lista de la sucursal
+        # ============================================================
         precio_final = float(p.precio_venta)  # fallback
         if sucursal and sucursal.lista_precio:
             pp = PrecioProducto.objects.filter(
@@ -159,21 +167,46 @@ def buscar_producto_ajax(request):
             if pp:
                 precio_final = float(pp.precio)
 
-        # Stock de la sucursal
-        stock_final = p.stock_actual  # fallback (stock global)
+        # ============================================================
+        # STOCK LOCAL (de la sucursal del turno)
+        # ============================================================
+        stock_local = p.stock_actual  # fallback (stock global)
         if sucursal:
             ss = StockSucursal.objects.filter(
                 producto=p, sucursal=sucursal
             ).first()
             if ss:
-                stock_final = ss.cantidad
+                stock_local = ss.cantidad
+
+        # ============================================================
+        # STOCK CRUZADO (de las otras sucursales)
+        # ============================================================
+        stock_otras = []
+        for s in sucursales_activas:
+            if sucursal and s.id == sucursal.id:
+                continue  # saltear la sucursal actual
+
+            ss_otra = StockSucursal.objects.filter(
+                producto=p, sucursal=s
+            ).first()
+            cantidad_otra = ss_otra.cantidad if ss_otra else 0
+
+            # Solo mostrar las que tienen stock
+            if cantidad_otra > 0:
+                stock_otras.append({
+                    'sucursal': s.nombre,
+                    'es_central': s.es_central,
+                    'cantidad': cantidad_otra,
+                })
 
         resultados.append({
             'id': p.id,
             'nombre': p.nombre,
             'codigo_barra': getattr(p, 'codigo_barra', ''),
             'precio_venta': precio_final,
-            'stock_actual': stock_final,
+            'stock_actual': stock_local,
+            'stock_otras_sucursales': stock_otras,
+            'tiene_stock_otras': len(stock_otras) > 0,
         })
 
     return JsonResponse(resultados, safe=False)
@@ -365,10 +398,18 @@ def procesar_venta_ajax(request):
         monto_recibido = Decimal(str(monto_recibido))
         vuelto = max(Decimal('0.00'), monto_recibido - total_venta)
 
-        # 7. Obtener datos del Cliente
+                # 7. Obtener datos del Cliente
         cliente_obj = None
         if cliente_id:
             cliente_obj = Cliente.objects.filter(id=cliente_id).first()
+
+        # 7b. 🔽 VALIDACIÓN: Consumidor Final anónimo no puede ir a remito/reparto
+        if not cliente_obj and (es_remito or repartidor_obj):
+            return JsonResponse({
+                'status': 'error',
+                'message': 'Para enviar a reparto, tenés que cargar un cliente. '
+                           'A Consumidor Final solo se le puede vender al contado.'
+            }, status=400)
 
         # 8. Crear Registro de Venta
         if es_remito:
@@ -384,6 +425,11 @@ def procesar_venta_ajax(request):
             estado_cobro_val = 'PENDIENTE'
         else:
             estado_cobro_val = 'PENDIENTE' if es_remito else 'COBRADO'
+        
+        # 🔽 NUEVO: Consumidor Final anónimo siempre se cobra al instante
+        if not cliente_obj:
+            estado_cobro_val = 'COBRADO'
+            saldo_pendiente = Decimal('0.00')
 
         venta = Venta.objects.create(
             turno=turno_activo,
@@ -694,12 +740,258 @@ def crear_cliente(request):
 def comprobante_ticket(request, venta_id):
     venta = get_object_or_404(Venta, id=venta_id)
     config = EmpresaConfig.objects.first()
+
+    # 🔽 Generar el texto plano del ticket para ESC/POS
+    ticket_texto = generar_ticket_texto(venta, config)
+
     return render(
         request,
         "ventas/ticket_imprimible.html",
-        {"venta": venta, "config": config},
+        {
+            "venta": venta,
+            "config": config,
+            "ticket_texto": ticket_texto,
+        },
     )
 
+
+# ============================================================
+# INFORME Z - TEXTO PLANO PARA ESC/POS
+# ============================================================
+def generar_informe_z_texto(informe, config, ancho=48):
+    """
+    Genera el texto plano del Informe Z para ESC/POS (80mm, 48 caracteres).
+    """
+    def center(texto):
+        return str(texto)[:ancho].center(ancho)
+
+    def linea(char='-'):
+        return char * ancho
+
+    def dos_columnas(izq, der):
+        izq = str(izq)
+        der = str(der)
+        espacio = ancho - len(izq) - len(der)
+        if espacio < 1:
+            return izq + ' ' + der
+        return izq + ' ' * espacio + der
+
+    lineas = []
+
+    # ============================================================
+    # ENCABEZADO
+    # ============================================================
+    nombre = config.nombre_fantasia or config.razon_social or "MI COMERCIO"
+    lineas.append(center(nombre.upper()))
+    lineas.append(center(f"CUIT: {config.cuit or '-'}"))
+    if config.direccion:
+        lineas.append(center(config.direccion))
+    lineas.append(linea('='))
+
+    # ============================================================
+    # TÍTULO
+    # ============================================================
+    lineas.append(center("*** CIERRE Z ***"))
+    lineas.append(center(f"Nro {informe.numero:06d}"))
+    lineas.append(center("Cierre de turno/caja"))
+    lineas.append(linea('='))
+
+    # ============================================================
+    # DATOS DEL TURNO
+    # ============================================================
+    lineas.append(f"Turno: #{informe.turno.id}")
+    suc = informe.turno.sucursal.nombre if informe.turno.sucursal else "-"
+    lineas.append(f"Sucursal: {suc}")
+
+    vendedor = informe.turno.vendedor
+    if vendedor:
+        nombre_vend = vendedor.get_full_name() or vendedor.username
+        lineas.append(f"Cajero: {nombre_vend}")
+
+    lineas.append(f"Apertura: {informe.turno.fecha_apertura.strftime('%d/%m/%Y %H:%M')} hs")
+
+    if informe.turno.fecha_cierre:
+        lineas.append(f"Cierre: {informe.turno.fecha_cierre.strftime('%d/%m/%Y %H:%M')} hs")
+
+    if informe.fecha_emision:
+        lineas.append(f"Emitido: {informe.fecha_emision.strftime('%d/%m/%Y %H:%M')} hs")
+
+    if informe.emitido_por:
+        nombre_em = informe.emitido_por.get_full_name() or informe.emitido_por.username
+        lineas.append(f"Emitio: {nombre_em}")
+
+    lineas.append(linea())
+
+    # ============================================================
+    # TOTALES POR MEDIO DE PAGO
+    # ============================================================
+    lineas.append("TOTALES POR MEDIO DE PAGO")
+    lineas.append(dos_columnas("Efectivo:", f"${informe.total_efectivo:.2f}"))
+    lineas.append(dos_columnas("Debito:", f"${informe.total_debito:.2f}"))
+    lineas.append(dos_columnas("Credito:", f"${informe.total_credito:.2f}"))
+    lineas.append(dos_columnas("Transferencia:", f"${informe.total_transferencia:.2f}"))
+    lineas.append(linea())
+
+    lineas.append(dos_columnas("TOTAL GENERAL:", f"${informe.total_general:.2f}"))
+    lineas.append(f"Operaciones: {informe.cantidad_operaciones}")
+    lineas.append(linea())
+
+    # ============================================================
+    # ARQUEO
+    # ============================================================
+    lineas.append("ARQUEO DE CAJA")
+    lineas.append(dos_columnas("Fondo inicial:", f"${informe.monto_inicial:.2f}"))
+    lineas.append(dos_columnas("Efectivo esperado:", f"${informe.efectivo_esperado:.2f}"))
+    lineas.append(dos_columnas("Efectivo contado:", f"${informe.efectivo_contado:.2f}"))
+    lineas.append(linea())
+    lineas.append(dos_columnas("DIFERENCIA:", f"${informe.diferencia:.2f}"))
+    lineas.append(linea('='))
+
+    # ============================================================
+    # OBSERVACIONES
+    # ============================================================
+    if informe.observaciones:
+        lineas.append("Observaciones:")
+        obs = str(informe.observaciones)
+        for i in range(0, len(obs), ancho):
+            lineas.append(obs[i:i + ancho])
+        lineas.append(linea())
+
+    # ============================================================
+    # PIE
+    # ============================================================
+    lineas.append(center("Cierre Z definitivo."))
+    lineas.append(center("Este turno ha sido cerrado."))
+    lineas.append(center("No se puede reabrir."))
+    lineas.append(linea())
+    lineas.append(center("--- FIN DEL CIERRE Z ---"))
+
+    return "\n".join(lineas)
+
+
+# ============================================================
+# TICKET DE VENTA - TEXTO PLANO PARA ESC/POS
+# ============================================================
+def generar_ticket_texto(venta, config, ancho=48):
+    """
+    Genera el texto plano del ticket con ancho fijo (48 caracteres para 80mm).
+    Sin HTML, sin CSS. Solo texto con saltos de línea.
+    """
+    def center(texto, ancho):
+        """Centra el texto en el ancho dado."""
+        texto = str(texto)[:ancho]
+        return texto.center(ancho)
+
+    def linea(char='-'):
+        return char * ancho
+
+    def dos_columnas(izq, der, ancho):
+        """Alinea izquierda y derecha."""
+        izq = str(izq)
+        der = str(der)
+        espacio = ancho - len(izq) - len(der)
+        if espacio < 1:
+            return izq + ' ' + der
+        return izq + ' ' * espacio + der
+
+    lineas = []
+
+    # ============================================================
+    # ENCABEZADO
+    # ============================================================
+    nombre = config.nombre_fantasia or config.razon_social or "MI COMERCIO"
+    lineas.append(center(nombre.upper(), ancho))
+    lineas.append(center(f"CUIT: {config.cuit}", ancho))
+    if config.direccion:
+        lineas.append(center(config.direccion, ancho))
+    if config.telefono:
+        lineas.append(center(f"Tel: {config.telefono}", ancho))
+    lineas.append(linea())
+
+    # ============================================================
+    # DATOS DEL COMPROBANTE
+    # ============================================================
+    tipo_doc = venta.get_tipo_comprobante_display() or "Ticket"
+
+    if venta.es_nota_credito:
+        lineas.append(f"** {tipo_doc.upper()} #{venta.id} **")
+    elif venta.es_remito:
+        lineas.append(f"REMITO #{venta.id}")
+    else:
+        lineas.append(f"{tipo_doc} #{venta.numero_comprobante or venta.id}")
+
+    lineas.append(f"Fecha: {venta.fecha.strftime('%d/%m/%Y %H:%M')}")
+    lineas.append(f"Atendio: {venta.vendedor.get_full_name() if venta.vendedor else '-'}")
+
+    cliente = venta.cliente.nombre if venta.cliente else "Consumidor Final"
+    lineas.append(f"Cliente: {cliente}")
+
+    if venta.cliente and venta.cliente.numero_documento:
+        lineas.append(f"Doc: {venta.cliente.numero_documento}")
+
+    lineas.append(linea())
+
+    # ============================================================
+    # DETALLE
+    # ============================================================
+    lineas.append(dos_columnas("Cant  Descripcion", "Subtotal", ancho))
+    lineas.append(linea())
+
+    for item in venta.detalles.all():
+        nombre_prod = item.producto.nombre[:32]
+        cant = f"{item.cantidad}x"
+        subtotal = f"${item.subtotal}"
+        lineas.append(dos_columnas(f"{cant} {nombre_prod}", subtotal, ancho))
+
+    lineas.append(linea())
+
+    # ============================================================
+    # TOTALES
+    # ============================================================
+    total_fmt = f"${venta.total}"
+    lineas.append(dos_columnas("TOTAL:", total_fmt, ancho))
+
+    if venta.monto_recibido and float(venta.monto_recibido) > 0:
+        lineas.append(dos_columnas("Recibido:", f"${venta.monto_recibido}", ancho))
+        lineas.append(dos_columnas("Vuelto:", f"${venta.vuelto}", ancho))
+
+    lineas.append(linea())
+
+    # ============================================================
+    # MÉTODO DE PAGO
+    # ============================================================
+    lineas.append(f"Metodo de Pago: {venta.get_metodo_pago_display()}")
+    lineas.append("")
+
+    # ============================================================
+    # CAE / ARCA
+    # ============================================================
+    if venta.cae:
+        lineas.append(center(f"CAE: {venta.cae}", ancho))
+        if venta.vencimiento_cae:
+            lineas.append(center(f"Venc. CAE: {venta.vencimiento_cae.strftime('%d/%m/%Y')}", ancho))
+        lineas.append(center("Comprobante Autorizado por ARCA/AFIP", ancho))
+    else:
+        lineas.append(center("* COMPROBANTE NO FISCAL *", ancho))
+
+    lineas.append(linea())
+    lineas.append(center("Gracias por su compra!", ancho))
+
+    # ============================================================
+    # 🔽 ESPACIO EN BLANCO ANTES DEL CORTE
+    # ============================================================
+    # 8 líneas ≈ 3.5-4 cm de papel extra antes del corte.
+    # Ajustá la cantidad (6 a 10) según cuánto espacio quieras.
+    lineas.append("")
+    lineas.append("")
+    lineas.append("")
+    lineas.append("")
+    lineas.append("")
+    lineas.append("")
+    lineas.append("")
+    lineas.append("")
+
+    return "\n".join(lineas)
 
 @login_required
 def comprobante_factura(request, venta_id):
@@ -1328,14 +1620,14 @@ def anular_venta_ajax(request, venta_id):
             venta_original.estado = 'CANCELADO'
             venta_original.save()
             registrar_log(
-            request,
-            accion='ANULAR',
-            descripcion=f'Venta #{venta_original.id} anulada - NC #{nc.id} - ${venta_original.total}',
-            modelo='Venta',
-            objeto_id=venta_original.id,
-            nivel='WARNING',
-            datos_antes={'estado': 'COMPLETADO'},
-            datos_despues={'estado': 'CANCELADO', 'nc_id': nc.id},
+                request,
+                accion='ANULAR',
+                descripcion=f'Venta #{venta_original.id} anulada - NC #{nc.id} - ${venta_original.total}',
+                modelo='Venta',
+                objeto_id=venta_original.id,
+                nivel='WARNING',
+                datos_antes={'estado': 'COMPLETADO'},
+                datos_despues={'estado': 'CANCELADO', 'nc_id': nc.id},
         )
         return JsonResponse({
             'success': True,
@@ -2493,6 +2785,21 @@ def cerrar_caja(request):
             },
         )
 
+        # =========================================================
+        # 🔽 AJAX: devolver TEXTO PLANO del Z para imprimir directo
+        # =========================================================
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            from apps.configuracion.models import EmpresaConfig
+            config = EmpresaConfig.objects.first()
+            informe_texto = generar_informe_z_texto(informe_z, config)
+
+            return JsonResponse({
+                'status': 'success',
+                'informe_id': informe_z.id,
+                'informe_texto': informe_texto,
+            })
+
+        # Si es un submit normal (sin JS), redirigir como antes
         return redirect('ventas:imprimir_informe', informe_id=informe_z.id)
 
     context = {
@@ -2506,3 +2813,21 @@ def cerrar_caja(request):
         'cantidad_operaciones': ventas_turno.count(),
     }
     return render(request, 'ventas/cerrar_caja.html', context)
+
+@login_required
+def ticket_texto_ajax(request, venta_id):
+    """
+    Devuelve el texto plano del ticket en formato ESC/POS.
+    Lo usa el POS para imprimir directo después de procesar la venta.
+    """
+    venta = get_object_or_404(Venta, id=venta_id)
+    config = EmpresaConfig.objects.first()
+
+    # Generar el texto plano (la misma función que ya tenemos)
+    ticket_texto = generar_ticket_texto(venta, config)
+
+    return JsonResponse({
+        'success': True,
+        'ticket_texto': ticket_texto,
+        'venta_id': venta.id,
+    })

@@ -101,7 +101,7 @@
                     </select>
                 </div>
 
-                <!-- 🔽 TIPO DE ENTREGA (toggle) -->
+                <!-- TIPO DE ENTREGA -->
                 <div class="mb-3">
                     <label class="form-label small fw-semibold text-secondary mb-1">
                         <i class="fas fa-truck text-warning me-1"></i> ¿Cómo se entrega?
@@ -119,7 +119,7 @@
                     </div>
                 </div>
 
-                <!-- 🔽 BLOQUE DE ENVÍO (oculto por defecto) -->
+                <!-- BLOQUE DE ENVÍO -->
                 <div id="bloque_envio" style="display: none;">
                     <div class="mb-2">
                         <label class="form-label small fw-semibold text-secondary mb-1">
@@ -263,12 +263,19 @@
             <p class="small text-muted mb-4" id="modal_estado_display"></p>
 
             <div class="d-grid gap-3">
-                <button type="button" class="btn btn-outline-primary btn-lg fw-bold text-start p-3" id="btn_imprimir_ticket">
-                    <i class="fas fa-receipt me-3 text-primary fa-lg"></i> Imprimir Ticket Térmico (80mm)
+                <button type="button" class="btn btn-success btn-lg fw-bold text-start p-3" id="btn_imprimir_ticket">
+                    <i class="fas fa-print me-3 text-white fa-lg"></i> <span id="txt_btn_imprimir">Imprimir Ticket Térmico (80mm)</span>
                 </button>
                 <button type="button" class="btn btn-outline-dark btn-lg fw-bold text-start p-3" id="btn_imprimir_factura">
                     <i class="fas fa-file-invoice-dollar me-3 text-dark fa-lg"></i> Ver / Descargar Documento (A4 / Remito R)
                 </button>
+
+                <!-- Aviso si el servicio no está disponible -->
+                <div id="aviso_sin_servicio" class="alert alert-warning small mb-0 py-2 d-none">
+                    <i class="fas fa-exclamation-triangle me-1"></i>
+                    Servicio de impresión no disponible. Usá el botón "Ver / Descargar Documento".
+                </div>
+
                 <div class="border rounded p-3 text-start bg-body-tertiary mt-2">
                     <label class="form-label fw-bold small text-secondary mb-1">
                         <i class="fas fa-envelope me-1"></i> Enviar Comprobante por Email
@@ -296,9 +303,7 @@ document.addEventListener('DOMContentLoaded', function () {
     let ultimaVentaId = null;
     let html5QrcodeScanner = null;
 
-    // ============================================================
-    // REFERENCIAS A ELEMENTOS
-    // ============================================================
+    // Referencias
     const buscarInput = document.getElementById('buscar_input');
     const btnBuscar = document.getElementById('btn_buscar');
     const resultadosDiv = document.getElementById('resultados_busqueda');
@@ -322,9 +327,11 @@ document.addEventListener('DOMContentLoaded', function () {
     const modalEstadoDisplay = document.getElementById('modal_estado_display');
     const emailInput = document.getElementById('email_cliente_input');
 
-    // ============================================================
-    // TOGGLE LOCAL vs ENVÍO
-    // ============================================================
+    const btnImprimirTicket = document.getElementById('btn_imprimir_ticket');
+    const txtBtnImprimir = document.getElementById('txt_btn_imprimir');
+    const avisoSinServicio = document.getElementById('aviso_sin_servicio');
+
+    // Toggle Local vs Envío
     const radiosEntrega = document.querySelectorAll('input[name="tipo_entrega"]');
     const bloqueEnvio = document.getElementById('bloque_envio');
     const repartidorSelect = document.getElementById('repartidor_id');
@@ -340,13 +347,10 @@ document.addEventListener('DOMContentLoaded', function () {
             if (direccionInput) direccionInput.value = '';
         }
     }
-
     radiosEntrega.forEach(r => r.addEventListener('change', actualizarTipoEntrega));
-    actualizarTipoEntrega();  // Ejecutar al cargar
+    actualizarTipoEntrega();
 
-    // ============================================================
-    // PERSISTENCIA DEL CARRITO
-    // ============================================================
+    // Persistencia
     function guardarEstadoPOS() {
         const tipoEntrega = document.querySelector('input[name="tipo_entrega"]:checked').value;
         const estado = {
@@ -366,12 +370,10 @@ document.addEventListener('DOMContentLoaded', function () {
     function restaurarEstadoPOS() {
         const backup = localStorage.getItem('pos_backup');
         if (!backup) return;
-
         try {
             const data = JSON.parse(backup);
             carrito = data.carrito || [];
             renderizarCarrito();
-
             if (data.cliente_id) document.getElementById('cliente_id').value = data.cliente_id;
             if (data.vendedor_id && document.getElementById('vendedor_id')) {
                 document.getElementById('vendedor_id').value = data.vendedor_id;
@@ -382,8 +384,6 @@ document.addEventListener('DOMContentLoaded', function () {
                 montoRecibidoInput.value = data.monto_recibido;
                 calcularVuelto();
             }
-
-            // Restaurar tipo de entrega
             if (data.tipo_entrega === 'ENVIO') {
                 document.getElementById('tipo_envio').checked = true;
                 actualizarTipoEntrega();
@@ -393,21 +393,14 @@ document.addEventListener('DOMContentLoaded', function () {
                 document.getElementById('tipo_local').checked = true;
                 actualizarTipoEntrega();
             }
-
             localStorage.removeItem('pos_backup');
-
-            if (carrito.length > 0) {
-                console.log(`✅ Carrito restaurado: ${carrito.length} productos.`);
-            }
         } catch (e) {
             console.error('Error restaurando POS:', e);
             localStorage.removeItem('pos_backup');
         }
     }
-
     restaurarEstadoPOS();
 
-    // Botón "Nuevo Cliente"
     const btnNuevoCliente = document.getElementById('btn_nuevo_cliente');
     if (btnNuevoCliente) {
         btnNuevoCliente.addEventListener('click', function (e) {
@@ -418,14 +411,10 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     window.addEventListener('beforeunload', function () {
-        if (carrito.length > 0) {
-            guardarEstadoPOS();
-        }
+        if (carrito.length > 0) guardarEstadoPOS();
     });
 
-    // ============================================================
-    // SONIDO Y CÁMARA
-    // ============================================================
+    // Sonido y cámara
     function reproducirBeep() {
         try {
             const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -487,9 +476,7 @@ document.addEventListener('DOMContentLoaded', function () {
     if (btnCerrarEscaner) btnCerrarEscaner.addEventListener('click', detenerCamara);
     if (btnCancelarEscaner) btnCancelarEscaner.addEventListener('click', detenerCamara);
 
-    // ============================================================
-    // BÚSQUEDA DE PRODUCTOS
-    // ============================================================
+    // Búsqueda de productos
     function buscarProductos() {
         const query = buscarInput.value.trim();
         if (query.length < 1) { resultadosDiv.style.display = 'none'; return; }
@@ -533,9 +520,7 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     });
 
-    // ============================================================
-    // CARRITO
-    // ============================================================
+    // Carrito
     function agregarAlCarrito(producto) {
         const index = carrito.findIndex(p => p.id === producto.id);
         if (index !== -1) { carrito[index].cantidad += 1; }
@@ -636,9 +621,7 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     });
 
-    // ============================================================
-    // PROCESAR VENTA (con validaciones)
-    // ============================================================
+    // Procesar venta
     function procesarVenta(accionComprobante) {
         const tipoEntrega = document.querySelector('input[name="tipo_entrega"]:checked').value;
         const clienteId = document.getElementById('cliente_id').value;
@@ -649,7 +632,6 @@ document.addEventListener('DOMContentLoaded', function () {
         const tipoComprobante = parseInt(document.getElementById('tipo_comprobante').value);
         const montoRecibido = parseFloat(montoRecibidoInput.value) || 0;
 
-        // 🔽 Validación: si es ENVÍO, exige repartidor y dirección
         if (tipoEntrega === 'ENVIO') {
             if (!repartidorId) {
                 alert('⚠️ Debés seleccionar un repartidor para el envío.');
@@ -663,7 +645,6 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         }
 
-                // 🔽 Validación: si es REMITO, exige que sea ENVÍO
         if (accionComprobante === 'REMITO' && tipoEntrega !== 'ENVIO') {
             alert('⚠️ Un Remito de Reparto requiere que selecciones "Envío a Domicilio".');
             return;
@@ -714,6 +695,22 @@ document.addEventListener('DOMContentLoaded', function () {
                 modalVentaId.textContent = '#' + ultimaVentaId;
                 modalEstadoDisplay.textContent = `Estado: ${data.estado_display}` + (data.repartidor ? ` | Repartidor: ${data.repartidor}` : '');
                 emailInput.value = data.cliente_email || '';
+
+                // Detectar servicio de impresión
+                detectarServicioImpresion().then(disponible => {
+                    if (disponible) {
+                        avisoSinServicio.classList.add('d-none');
+                        btnImprimirTicket.disabled = false;
+                        btnImprimirTicket.classList.remove('btn-secondary');
+                        btnImprimirTicket.classList.add('btn-success');
+                    } else {
+                        avisoSinServicio.classList.remove('d-none');
+                        btnImprimirTicket.disabled = true;
+                        btnImprimirTicket.classList.remove('btn-success');
+                        btnImprimirTicket.classList.add('btn-secondary');
+                    }
+                });
+
                 overlayPostVenta.style.display = 'flex';
             } else {
                 alert('Error al procesar: ' + (data.message || 'Ocurrió un problema en el servidor.'));
@@ -727,8 +724,67 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
-    document.getElementById('btn_imprimir_ticket').addEventListener('click', function() {
-        if (ultimaVentaId) window.open(`/ventas/comprobante/${ultimaVentaId}/ticket/`, '_blank');
+    // ============================================================
+    // IMPRESIÓN SILENCIOSA
+    // ============================================================
+    async function detectarServicioImpresion() {
+        try {
+            const r = await fetch('http://127.0.0.1:8085/health', {cache: 'no-store'});
+            return r.ok;
+        } catch {
+            return false;
+        }
+    }
+
+    btnImprimirTicket.addEventListener('click', async function() {
+        if (!ultimaVentaId) return;
+
+        const textoOriginal = txtBtnImprimir.textContent;
+        btnImprimirTicket.disabled = true;
+        txtBtnImprimir.textContent = 'Imprimiendo...';
+
+        try {
+            const respTicket = await fetch(`/ventas/ticket-texto/${ultimaVentaId}/`);
+            const ticketData = await respTicket.json();
+
+            if (!ticketData.success) {
+                alert('Error al generar el ticket: ' + (ticketData.error || 'desconocido'));
+                btnImprimirTicket.disabled = false;
+                txtBtnImprimir.textContent = textoOriginal;
+                return;
+            }
+
+            const respPrint = await fetch('http://127.0.0.1:8085/print', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    contenido: ticketData.ticket_texto,
+                    tipo: 'ticket',
+                    cortar: true,
+                    modo: 'texto',
+                }),
+            });
+
+            const printData = await respPrint.json();
+
+            if (printData.success) {
+                txtBtnImprimir.textContent = '✅ ¡Impreso!';
+                setTimeout(() => {
+                    txtBtnImprimir.textContent = textoOriginal;
+                    btnImprimirTicket.disabled = false;
+                }, 2000);
+            } else {
+                alert('Error al imprimir: ' + (printData.error || 'desconocido'));
+                btnImprimirTicket.disabled = false;
+                txtBtnImprimir.textContent = textoOriginal;
+            }
+        } catch (err) {
+            console.error('[POS] Error imprimiendo:', err);
+            alert('No se pudo conectar con el servicio de impresión.\n\n' +
+                  'Verificá que esté corriendo en la PC.');
+            btnImprimirTicket.disabled = false;
+            txtBtnImprimir.textContent = textoOriginal;
+        }
     });
 
     document.getElementById('btn_imprimir_factura').addEventListener('click', function() {

@@ -1,45 +1,68 @@
+{% load static %}
 <!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
     <title>Ticket #{{ venta.id }}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <style>
         body { font-family: monospace; width: 280px; margin: 0 auto; padding: 10px; font-size: 12px; }
         .text-center { text-align: center; }
         .line { border-top: 1px dashed #000; margin: 8px 0; }
         .flex { display: flex; justify-content: space-between; }
+
+        @media print {
+            .no-print { display: none !important; }
+            body { width: 80mm; padding: 0; margin: 0; }
+        }
     </style>
 </head>
-<body onload="window.print()">
+<body>
+
+<!-- BOTONES (no se imprimen) -->
+<div class="container my-3 no-print text-center">
+    <button onclick="imprimirConFeedback(this, 'ticket')"
+            class="btn btn-success btn-lg me-2 fw-bold">
+        <i class="fas fa-print me-1"></i> Imprimir
+    </button>
+    <button onclick="window.print()"
+            class="btn btn-secondary btn-lg">
+        <i class="fas fa-eye me-1"></i> Vista previa
+    </button>
+</div>
+
+<!-- ===================================================== -->
+<!-- VISTA PREVIA EN PANTALLA (HTML)                        -->
+<!-- ===================================================== -->
+<div id="ticket-preview">
+
     <div class="text-center">
         <strong>{{ config.nombre_fantasia|default:config.razon_social|default:"MI COMERCIO" }}</strong><br>
         CUIT: {{ config.cuit|default:"-" }}<br>
         {{ config.direccion|default:"" }}
     </div>
-    
+
     <div class="line"></div>
-    
+
     <div>
         <strong>Ticket Venta #{{ venta.id }}</strong><br>
-        Fecha: {{ venta.fecha_creacion|date:"d/m/Y H:i" }} hs<br>
+        Fecha: {{ venta.fecha|date:"d/m/Y H:i" }} hs<br>
         Atendió: {{ venta.vendedor.username }}<br>
-        Cliente: {{ venta.cliente.nombre|default:"Consumidor Final" }}
+        Cliente: {{ venta.cliente_nombre }}
     </div>
-    
+
     <div class="line"></div>
-    
-    <div class="flex" style="font-weight: bold;">
-        <span>Cant - Prod</span>
-        <span>Total</span>
-    </div>
+
     {% for item in venta.detalles.all %}
     <div class="flex">
         <span>{{ item.cantidad }}x {{ item.producto.nombre }}</span>
         <span>${{ item.subtotal }}</span>
     </div>
     {% endfor %}
-    
+
     <div class="line"></div>
+
     <div class="flex" style="font-size: 14px; font-weight: bold;">
         <span>TOTAL:</span>
         <span>${{ venta.total }}</span>
@@ -48,7 +71,6 @@
 
     <div class="line"></div>
 
-    <!-- SECCIÓN CAE Y ARCA -->
     <div class="text-center" style="font-size: 10px;">
         {% if venta.cae %}
             <strong>CAE: {{ venta.cae }}</strong><br>
@@ -61,5 +83,214 @@
 
     <div class="line"></div>
     <div class="text-center">¡Gracias por su compra!</div>
+
+</div>
+
+<!-- ===================================================== -->
+<!-- TEXTO PLANO PARA ESC/POS (oculto, es lo que se imprime) -->
+<!-- ===================================================== -->
+<pre id="ticket-escpos" style="display:none;">{{ ticket_texto }}</pre>
+
+<script>
+    // =========================================================
+    // IMPRESIÓN SILENCIOSA - Manda TEXTO PLANO al servicio local
+    // =========================================================
+    async function imprimirConFeedback(boton, tipo = 'ticket') {
+        const textoOriginal = boton.innerHTML;
+
+        // 1. Verificar que el servicio esté disponible
+        let disponible = false;
+        try {
+            const resp = await fetch('http://127.0.0.1:8085/health', {
+                method: 'GET',
+                cache: 'no-store',
+            });
+            disponible = resp.ok;
+        } catch {
+            disponible = false;
+        }
+
+        // 2. Si no está disponible, ofrecer la impresión tradicional
+        if (!disponible) {
+            if (confirm(
+                '⚠️ Servicio de impresión no disponible.\n\n' +
+                '¿Querés usar la impresión tradicional del navegador?'
+            )) {
+                window.print();
+            }
+            return;
+        }
+
+        // 3. Estado "imprimiendo"
+        boton.disabled = true;
+        boton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Imprimiendo...';
+
+        // 4. Tomar el TEXTO PLANO del <pre>, no el HTML
+        const ticketEl = document.getElementById('ticket-escpos');
+        const contenido = ticketEl ? ticketEl.textContent : '';
+
+        if (!contenido.trim()) {
+            alert('Error: no hay texto para imprimir. Contactá al administrador.');
+            boton.innerHTML = textoOriginal;
+            boton.disabled = false;
+            return;
+        }
+
+        // 5. Enviar al servicio con modo='texto'
+        try {
+            const response = await fetch('http://127.0.0.1:8085/print', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    contenido: contenido,
+                    tipo: tipo,
+                    cortar: true,
+                    modo: 'texto',
+                }),
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                boton.innerHTML = '<i class="fas fa-check"></i> ¡Impreso!';
+                setTimeout(() => {
+                    boton.innerHTML = textoOriginal;
+                    boton.disabled = false;
+                }, 2000);
+            } else {
+                alert('Error al imprimir:\n\n' + (data.error || 'Error desconocido'));
+                boton.innerHTML = textoOriginal;
+                boton.disabled = false;
+            }
+        } catch (err) {
+            alert('Error de conexión:\n\n' + err.message + '\n\n' +
+                  'Verificá que el servicio de impresión esté corriendo en la PC.');
+            boton.innerHTML = textoOriginal;
+            boton.disabled = false;
+        }
+    }
+
+    // Detectar servicio al cargar (para feedback visual)
+    document.addEventListener('DOMContentLoaded', async function() {
+        try {
+            const resp = await fetch('http://127.0.0.1:8085/health', {
+                method: 'GET',
+                cache: 'no-store',
+            });
+            if (!resp.ok) throw new Error('No responde');
+        } catch {
+            const btnVerde = document.querySelector('.btn-success');
+            if (btnVerde) {
+                btnVerde.classList.remove('btn-success');
+                btnVerde.classList.add('btn-secondary');
+                btnVerde.title = 'Servicio de impresión no disponible';
+            }
+        }
+    });
+</script>
+
+<script>
+    // =========================================================
+    // AUTO-IMPRESIÓN OPCIONAL
+    // Solo imprime si la URL trae ?auto=1
+    // Si no, solo muestra la vista previa (no imprime nada).
+    // =========================================================
+    document.addEventListener('DOMContentLoaded', async function() {
+        // 🔽 Solo auto-imprimir si la URL tiene ?auto=1
+        const params = new URLSearchParams(window.location.search);
+        const autoImprimir = params.get('auto') === '1';
+
+        if (!autoImprimir) {
+            console.log('[Ticket] Vista previa (sin auto-impresión)');
+            return;
+        }
+
+        // Verificar si el servicio está disponible
+        let disponible = false;
+        try {
+            const resp = await fetch('http://127.0.0.1:8085/health', {
+                cache: 'no-store',
+            });
+            disponible = resp.ok;
+        } catch {
+            disponible = false;
+        }
+
+        if (!disponible) {
+            console.warn('[Ticket] Servicio de impresión no disponible');
+            return;
+        }
+
+        // Esperar 500ms para que la página cargue bien
+        await new Promise(r => setTimeout(r, 500));
+
+        // Tomar el texto plano
+        const ticketEl = document.getElementById('ticket-escpos');
+        const contenido = ticketEl ? ticketEl.textContent : '';
+
+        if (!contenido.trim()) {
+            console.warn('[Ticket] No hay texto para imprimir');
+            return;
+        }
+
+        // Enviar al servicio (silencioso)
+        try {
+            const response = await fetch('http://127.0.0.1:8085/print', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    contenido: contenido,
+                    tipo: 'ticket',
+                    cortar: true,
+                    modo: 'texto',
+                }),
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                console.log('[Ticket] Impreso automáticamente');
+                mostrarToastTicket('✅ Ticket impreso');
+            } else {
+                console.error('[Ticket] Error:', data.error);
+                mostrarToastTicket('❌ Error: ' + data.error, 'error');
+            }
+        } catch (err) {
+            console.error('[Ticket] Error de conexión:', err);
+            mostrarToastTicket('❌ No se pudo imprimir', 'error');
+        }
+    });
+
+    /**
+     * Muestra un toast arriba a la derecha.
+     */
+    function mostrarToastTicket(mensaje, tipo = 'success') {
+        const color = tipo === 'error' ? '#dc3545' : '#198754';
+        const toast = document.createElement('div');
+        toast.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: ${color};
+            color: white;
+            padding: 12px 20px;
+            border-radius: 6px;
+            font-family: sans-serif;
+            font-size: 14px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            z-index: 9999;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        `;
+        toast.textContent = mensaje;
+        document.body.appendChild(toast);
+
+        setTimeout(() => { toast.style.opacity = '1'; }, 50);
+        setTimeout(() => {
+            toast.style.opacity = '0';
+            setTimeout(() => toast.remove(), 300);
+        }, 3000);
+    }
+</script>
 </body>
 </html>

@@ -3,6 +3,10 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required, user_passes_test
 from django.core.paginator import Paginator
 from django.db.models import Q
+from django.db import transaction
+from django.db.models import Sum
+import logging
+logger = logging.getLogger(__name__)
 
 from .models import Producto, Categoria, Proveedor, MovimientoStock
 from .forms import ProductoForm, CategoriaForm, ProveedorForm
@@ -33,6 +37,9 @@ def es_cajero_o_superior(user):
 @login_required
 def lista_productos(request):
     """Listado y consulta de productos con filtros."""
+    from .models import StockSucursal
+    from apps.configuracion.models import Sucursal
+
     productos = Producto.objects.select_related('categoria', 'proveedor').all().order_by('nombre')
 
     q = request.GET.get('q', '').strip()
@@ -55,8 +62,29 @@ def lista_productos(request):
     # Bandera para saber si el usuario puede modificar
     es_admin = request.user.is_superuser or request.user.groups.filter(name='Administrador').exists()
 
+    # Armar desglose de stock por producto
+    sucursales = list(Sucursal.objects.filter(activa=True).order_by('-es_central', 'nombre'))
+    productos_con_stock = []
+
+    for p in productos:
+        stocks = {}
+        for ss in StockSucursal.objects.filter(producto=p).select_related('sucursal'):
+            stocks[ss.sucursal_id] = ss.cantidad
+
+        productos_con_stock.append({
+            'producto': p,
+            'stocks': [
+                {
+                    'sucursal': s,
+                    'cantidad': stocks.get(s.id, 0),
+                }
+                for s in sucursales
+            ],
+        })
+
     context = {
-        'productos': productos,
+        'productos_con_stock': productos_con_stock,
+        'sucursales': sucursales,
         'categorias': categorias,
         'proveedores': proveedores,
         'q': q,
@@ -112,12 +140,37 @@ def editar_producto(request, pk):
 @login_required
 @user_passes_test(es_admin_o_super)
 def eliminar_producto(request, pk):
-    """Eliminación de producto (Exclusivo Administradores y Superusuarios)."""
+    """
+    Dar de baja un producto (soft delete).
+    NO lo elimina: lo marca como inactivo para conservar historial.
+    """
     producto = get_object_or_404(Producto, pk=pk)
+
     if request.method == 'POST':
+        if not producto.activo:
+            messages.warning(request, f'El producto "{producto.nombre}" ya estaba dado de baja.')
+            return redirect('productos:lista_productos')
+
         nombre = producto.nombre
-        producto.delete()
-        messages.success(request, f'Producto "{nombre}" eliminado con éxito.')
+        producto.activo = False
+        producto.save()
+
+        # Registrar en auditoría (opcional)
+        try:
+            from apps.configuracion.audit import registrar_log
+            registrar_log(
+                request,
+                accion='BAJA',
+                descripcion=f'Producto dado de baja: {nombre} (ID: {producto.id})',
+                modelo='Producto',
+                objeto_id=producto.id,
+                nivel='WARNING',
+            )
+        except Exception:
+            pass
+
+        messages.success(request, f'Producto "{nombre}" dado de baja correctamente.')
+
     return redirect('productos:lista_productos')
 
 
@@ -287,3 +340,131 @@ def movimientos_stock_view(request):
         'es_admin': es_admin,
     }
     return render(request, 'productos/movimientos_stock.html', context)
+
+# ==========================================
+# --- STOCK POR SUCURSAL ---
+# ==========================================
+
+@login_required
+@user_passes_test(es_admin_o_super)
+def cargar_stock_sucursal_view(request, producto_id):
+    """
+    Carga stock de un producto en una sucursal específica.
+    Actualiza StockSucursal y recalcula Producto.stock_actual.
+    """
+    from apps.configuracion.models import Sucursal
+    from .models import StockSucursal
+
+    producto = get_object_or_404(Producto, id=producto_id)
+
+    if request.method == 'POST':
+        sucursal_id = request.POST.get('sucursal', '').strip()
+        cantidad = request.POST.get('cantidad', '0').strip()
+        motivo = request.POST.get('motivo', 'Carga inicial').strip()
+
+        # Validaciones
+        errores = []
+        if not sucursal_id:
+            errores.append('Tenés que elegir una sucursal.')
+        try:
+            cantidad = int(cantidad)
+            if cantidad == 0:
+                errores.append('La cantidad no puede ser cero.')
+        except ValueError:
+            errores.append('La cantidad debe ser un número entero.')
+
+        if errores:
+            for err in errores:
+                messages.error(request, err)
+            return redirect('productos:cargar_stock_sucursal', producto_id=producto.id)
+
+        sucursal = get_object_or_404(Sucursal, id=sucursal_id)
+
+        try:
+            with transaction.atomic():
+                # Buscar o crear el registro de stock
+                ss, created = StockSucursal.objects.get_or_create(
+                    producto=producto,
+                    sucursal=sucursal,
+                    defaults={'cantidad': 0}
+                )
+
+                # Sumar (o restar) la cantidad
+                ss.cantidad += cantidad
+                if ss.cantidad < 0:
+                    messages.error(request, f'No podés restar más de lo que hay. Stock actual: {ss.cantidad - cantidad}')
+                    return redirect('productos:cargar_stock_sucursal', producto_id=producto.id)
+                ss.save()
+
+                # Recalcular el stock total del producto
+                total = StockSucursal.objects.filter(producto=producto).aggregate(
+                    t=Sum('cantidad')
+                )['t'] or 0
+                producto.stock_actual = total
+                producto.save()
+
+                # Registrar el movimiento
+                MovimientoStock.objects.create(
+                    producto=producto,
+                    sucursal=sucursal,
+                    tipo='AJUSTE' if cantidad < 0 else 'ENTRADA',
+                    cantidad=abs(cantidad),
+                    motivo=f'{motivo} - {sucursal.nombre}',
+                )
+
+            messages.success(
+                request,
+                f'Stock actualizado: {cantidad:+d} en {sucursal.nombre}. '
+                f'Total del producto: {total}'
+            )
+            return redirect('productos:lista_productos')
+
+        except Exception as e:
+            logger.exception(f"Error cargando stock: {e}")
+            messages.error(request, f'Error al cargar stock: {str(e)}')
+
+    # GET: mostrar el formulario
+    sucursales = Sucursal.objects.filter(activa=True).order_by('-es_central', 'nombre')
+
+    # Stock actual del producto por sucursal
+    stock_actual = {}
+    for ss in StockSucursal.objects.filter(producto=producto).select_related('sucursal'):
+        stock_actual[ss.sucursal_id] = ss.cantidad
+
+    context = {
+        'producto': producto,
+        'sucursales': sucursales,
+        'stock_actual': stock_actual,
+    }
+    return render(request, 'productos/cargar_stock_sucursal.html', context)
+
+@login_required
+@user_passes_test(es_admin_o_super)
+def reactivar_producto(request, pk):
+    """Reactiva un producto dado de baja."""
+    producto = get_object_or_404(Producto, pk=pk)
+
+    if request.method == 'POST':
+        if producto.activo:
+            messages.warning(request, f'El producto "{producto.nombre}" ya estaba activo.')
+            return redirect('productos:lista_productos')
+
+        producto.activo = True
+        producto.save()
+
+        try:
+            from apps.configuracion.audit import registrar_log
+            registrar_log(
+                request,
+                accion='REACTIVAR',
+                descripcion=f'Producto reactivado: {producto.nombre} (ID: {producto.id})',
+                modelo='Producto',
+                objeto_id=producto.id,
+            )
+        except Exception:
+            pass
+
+        messages.success(request, f'Producto "{producto.nombre}" reactivado correctamente.')
+
+    return redirect('productos:lista_productos')
+

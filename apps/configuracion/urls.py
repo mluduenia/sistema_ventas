@@ -17,4 +17,5 @@ urlpatterns = [
     path('reset-dev/ejecutar/', views.ejecutar_reset_dev_view, name='ejecutar_reset_dev'),
     path('auditoria/', views.auditoria_view, name='auditoria'),
     path('auditoria/<int:log_id>/', views.auditoria_detalle_view, name='auditoria_detalle'),
+    
 ]
