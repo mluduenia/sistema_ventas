@@ -1,0 +1,249 @@
+{% extends 'base.html' %}
+
+{% block title %}Pendientes de {{ repartidor.username }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3">
+
+    <!-- ENCABEZADO -->
+    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+        <div>
+            <h4 class="fw-bold m-0">
+                <i class="fas fa-motorcycle text-warning me-2"></i>
+                Pendientes de rendición: {{ repartidor.get_full_name|default:repartidor.username }}
+            </h4>
+            <small class="text-muted">
+                {{ cantidad }} remito(s) sin rendir
+                {% if cantidad_en_calle > 0 %} · {{ cantidad_en_calle }} en la calle{% endif %}
+                {% if cantidad_entregadas > 0 %} · {{ cantidad_entregadas }} entregados sin rendir{% endif %}
+            </small>
+        </div>
+        <a href="{% url 'ventas:lista_repartidores' %}" class="btn btn-outline-secondary">
+            <i class="fas fa-arrow-left me-1"></i> Volver
+        </a>
+    </div>
+
+    <!-- KPIs -->
+    <div class="row g-3 mb-4">
+        <div class="col-md-3">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body">
+                    <small class="text-muted d-block">Total sin rendir</small>
+                    <span class="fs-4 fw-bold">{{ cantidad }}</span>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body">
+                    <small class="text-muted d-block">Total a rendir</small>
+                    <span class="fs-4 fw-bold text-success">${{ total_a_rendir|floatformat:2 }}</span>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body">
+                    <small class="text-muted d-block">En efectivo (a rendir)</small>
+                    <span class="fs-4 fw-bold text-warning">${{ total_efectivo|floatformat:2 }}</span>
+                    <small class="text-muted d-block mt-1">Otros medios: ${{ total_otros|floatformat:2 }}</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body">
+                    <small class="text-muted d-block">Desglose</small>
+                    <span class="badge bg-warning text-dark me-1">
+                        <i class="fas fa-truck me-1"></i>{{ cantidad_en_calle }} en calle
+                    </span>
+                    <br>
+                    <span class="badge bg-success mt-1">
+                        <i class="fas fa-check me-1"></i>{{ cantidad_entregadas }} entregados
+                    </span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- BOTÓN MASIVO -->
+    {% if cantidad > 0 %}
+    <div class="alert alert-warning border-0 d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <div>
+            <i class="fas fa-info-circle me-1"></i>
+            <strong>¿El repartidor ya volvió con todo?</strong> Podés rendir todo de una.
+        </div>
+        <button class="btn btn-warning fw-bold" id="btn-rendir-todos">
+            <i class="fas fa-hand-holding-usd me-1"></i> Rendir todos (${{ total_a_rendir|floatformat:2 }})
+        </button>
+    </div>
+    {% endif %}
+
+    <!-- TABLA -->
+    <div class="card border-0 shadow-sm">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>N° Venta</th>
+                            <th>Fecha</th>
+                            <th>Cliente</th>
+                            <th>Dirección</th>
+                            <th class="text-end">Total</th>
+                            <th class="text-center">Pago</th>
+                            <th class="text-center">Estado</th>
+                            <th class="text-center">Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for v in ventas_pendientes %}
+                        <tr>
+                            <td class="fw-bold">#{{ v.id }}</td>
+                            <td class="small">{{ v.fecha|date:"d/m/Y H:i" }}</td>
+                            <td>{{ v.cliente.nombre|default:"Consumidor Final" }}</td>
+                            <td class="small">
+                                {% if v.direccion_entrega %}
+                                    <i class="fas fa-map-marker-alt text-danger me-1"></i>
+                                    {{ v.direccion_entrega }}
+                                {% else %}
+                                    <small class="text-muted">—</small>
+                                {% endif %}
+                            </td>
+                            <td class="text-end fw-bold text-success">${{ v.total|floatformat:2 }}</td>
+                            <td class="text-center">
+                                <small class="badge bg-outline-dark border text-dark">
+                                    {{ v.get_metodo_pago_display }}
+                                </small>
+                            </td>
+                            <td class="text-center">
+                                {% if v.estado == 'PENDIENTE_ENTREGA' %}
+                                    <span class="badge bg-warning text-dark">
+                                        <i class="fas fa-truck me-1"></i> En calle
+                                    </span>
+                                {% elif v.estado == 'ENTREGADO' %}
+                                    <span class="badge bg-success">
+                                        <i class="fas fa-check me-1"></i> Entregado
+                                    </span>
+                                {% endif %}
+                            </td>
+                            <td class="text-center">
+                                <div class="btn-group btn-group-sm">
+                                    <a href="{% url 'ventas:comprobante_factura' v.id %}" target="_blank"
+                                       class="btn btn-outline-primary" title="Ver Remito">
+                                        <i class="fas fa-eye"></i>
+                                    </a>
+                                    <button class="btn btn-outline-info btn-rendir-venta"
+                                            data-venta-id="{{ v.id }}"
+                                            title="Rendir esta venta">
+                                        <i class="fas fa-hand-holding-usd"></i>
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="8" class="text-center py-5 text-muted">
+                                <i class="fas fa-check-circle fa-3x mb-3 d-block text-success opacity-50"></i>
+                                <strong>¡Todo rendido!</strong>
+                                <p class="mb-0 small">Este repartidor no tiene remitos pendientes.</p>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+
+    // Rendir individual
+    document.querySelectorAll('.btn-rendir-venta').forEach(btn => {
+        btn.addEventListener('click', async function () {
+            const ventaId = this.dataset.ventaId;
+            const boton = this;
+            const textoOriginal = boton.innerHTML;
+
+            const ok = await confirmAsync(
+                '¿Rendir la venta <strong>#' + ventaId + '</strong>?',
+                { textoAceptar: 'Sí, rendir', tipo: 'info' }
+            );
+            if (!ok) return;
+
+            boton.disabled = true;
+            boton.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+
+            try {
+                const resp = await fetch(`/ventas/${ventaId}/rendir/`, {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRFToken': '{{ csrf_token }}',
+                        'Content-Type': 'application/json',
+                    },
+                });
+                const data = await resp.json();
+                if (data.status === 'success') {
+                    alert('✅ Venta rendida.');
+                    location.reload();
+                } else {
+                    alert('❌ ' + data.message);
+                    boton.disabled = false;
+                    boton.innerHTML = textoOriginal;
+                }
+            } catch (err) {
+                alert('❌ Error: ' + err.message);
+                boton.disabled = false;
+                boton.innerHTML = textoOriginal;
+            }
+        });
+    });
+
+    // Rendir todos
+    const btnRendirTodos = document.getElementById('btn-rendir-todos');
+    if (btnRendirTodos) {
+        btnRendirTodos.addEventListener('click', async function () {
+            const boton = this;
+            const textoOriginal = boton.innerHTML;
+
+            const ok = await confirmAsync(
+                '¿Rendir <strong>TODAS</strong> las ventas pendientes de este repartidor?<br><br>' +
+                'Confirmás que volvió con toda la plata y el stock.',
+                { textoAceptar: 'Sí, rendir todo', tipo: 'warning' }
+            );
+            if (!ok) return;
+
+            boton.disabled = true;
+            boton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Procesando...';
+
+            try {
+                const resp = await fetch(`/ventas/repartidores/{{ repartidor.id }}/rendir-todos/`, {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRFToken': '{{ csrf_token }}',
+                        'Content-Type': 'application/json',
+                    },
+                });
+                const data = await resp.json();
+                if (data.status === 'success') {
+                    alert('✅ ' + data.message);
+                    location.reload();
+                } else {
+                    alert('❌ ' + data.message);
+                    boton.disabled = false;
+                    boton.innerHTML = textoOriginal;
+                }
+            } catch (err) {
+                alert('❌ Error: ' + err.message);
+                boton.disabled = false;
+                boton.innerHTML = textoOriginal;
+            }
+        });
+    }
+});
+</script>
+{% endblock %}

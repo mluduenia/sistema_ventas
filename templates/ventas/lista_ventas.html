@@ -86,7 +86,7 @@
                                 {% endif %}
                             </td>
 
-                            <!-- ACCIONES Y EMISIÓN DE FACTURA LOCAL -->
+                            <!-- ACCIONES -->
                             <td class="text-center">
                                 <div class="btn-group btn-group-sm">
                                     <a href="{% url 'ventas:comprobante_factura' v.id %}" target="_blank"
@@ -97,6 +97,24 @@
                                        class="btn btn-outline-secondary" title="Ver Ticket Térmico">
                                         <i class="fas fa-receipt"></i>
                                     </a>
+
+                                    <!-- Facturar (solo si es ticket no fiscal sin CAE) -->
+                                    {% if not v.cae and not v.es_remito and not v.es_nota_credito and v.tipo_comprobante == 0 and v.estado != 'PRESUPUESTO' %}
+                                    <button class="btn btn-outline-success btn-facturar-venta"
+                                            data-venta-id="{{ v.id }}"
+                                            title="Facturar ahora con ARCA">
+                                        <i class="fas fa-file-invoice-dollar"></i>
+                                    </button>
+                                    {% endif %}
+
+                                    <!-- 🔽 NUEVO: Rendir (solo si está ENTREGADO, pendiente de rendición) -->
+                                    {% if v.estado == 'ENTREGADO' %}
+                                    <button class="btn btn-outline-info btn-rendir-venta"
+                                            data-venta-id="{{ v.id }}"
+                                            title="Rendir (el repartidor volvió con la plata y el stock)">
+                                        <i class="fas fa-hand-holding-usd"></i>
+                                    </button>
+                                    {% endif %}
                                 </div>
                             </td>
                         </tr>
@@ -166,4 +184,263 @@
         {% endif %}
     </div>
 </div>
+
+<!-- ============================================================ -->
+<!-- MODAL POST-FACTURACIÓN                                        -->
+<!-- ============================================================ -->
+<div id="overlayPostFacturacion" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0, 0, 0, 0.75); z-index: 9998; align-items: center; justify-content: center;">
+    <div class="card border-0 shadow-lg" style="width: 95%; max-width: 500px; border-radius: 12px; overflow: hidden;">
+        <div class="card-header bg-success text-white py-3 text-center border-0">
+            <h4 class="mb-0 fw-bold"><i class="fas fa-check-circle me-2"></i> ¡Factura Emitida!</h4>
+        </div>
+        <div class="card-body p-4 text-center">
+            <p class="fs-5 mb-1">Comprobante ID: <strong id="modal_venta_id" class="text-success">#0</strong></p>
+            <p class="small text-muted mb-2">CAE: <strong id="modal_cae" class="text-dark">-</strong></p>
+            <p class="small text-muted mb-4" id="modal_estado_display"></p>
+
+            <div class="d-grid gap-3">
+                <button type="button" class="btn btn-success btn-lg fw-bold text-start p-3" id="btn_imprimir_ticket">
+                    <i class="fas fa-print me-3 text-white fa-lg"></i> <span id="txt_btn_imprimir">Imprimir Ticket Térmico (80mm)</span>
+                </button>
+                <button type="button" class="btn btn-outline-dark btn-lg fw-bold text-start p-3" id="btn_imprimir_factura">
+                    <i class="fas fa-file-invoice-dollar me-3 text-dark fa-lg"></i> Ver Factura A4
+                </button>
+
+                <div id="aviso_sin_servicio" class="alert alert-warning small mb-0 py-2 d-none">
+                    <i class="fas fa-exclamation-triangle me-1"></i>
+                    Servicio de impresión no disponible. Usá el botón "Ver Factura A4".
+                </div>
+            </div>
+        </div>
+        <div class="card-footer bg-body-tertiary text-center py-3 border-0">
+            <button type="button" class="btn btn-secondary px-5 fw-bold" id="btn_cerrar_modal">
+                Cerrar <i class="fas fa-times ms-1"></i>
+            </button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+
+    // =========================================================
+    // REFERENCIAS AL MODAL
+    // =========================================================
+    const overlayPostFacturacion = document.getElementById('overlayPostFacturacion');
+    const modalVentaId = document.getElementById('modal_venta_id');
+    const modalCae = document.getElementById('modal_cae');
+    const modalEstadoDisplay = document.getElementById('modal_estado_display');
+    const btnImprimirTicket = document.getElementById('btn_imprimir_ticket');
+    const txtBtnImprimir = document.getElementById('txt_btn_imprimir');
+    const btnImprimirFactura = document.getElementById('btn_imprimir_factura');
+    const avisoSinServicio = document.getElementById('aviso_sin_servicio');
+    const btnCerrarModal = document.getElementById('btn_cerrar_modal');
+
+    let ultimaVentaId = null;
+
+    // =========================================================
+    // BOTÓN FACTURAR EN CADA FILA
+    // =========================================================
+    document.querySelectorAll('.btn-facturar-venta').forEach(btn => {
+        btn.addEventListener('click', async function () {
+            const ventaId = this.dataset.ventaId;
+            const boton = this;
+            const textoOriginal = boton.innerHTML;
+
+            const ok = await confirmAsync(
+                '¿Facturar la venta <strong>#' + ventaId + '</strong> con ARCA/AFIP?<br><br>' +
+                'Se emitirá el CAE y la venta pasará a ser una factura válida.',
+                {
+                    textoAceptar: 'Sí, facturar',
+                    textoCancelar: 'Cancelar',
+                    tipo: 'success',
+                }
+            );
+            if (!ok) return;
+
+            boton.disabled = true;
+            boton.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+
+            try {
+                const resp = await fetch(`/ventas/${ventaId}/facturar/`, {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRFToken': '{{ csrf_token }}',
+                        'Content-Type': 'application/json',
+                    },
+                });
+
+                const data = await resp.json();
+
+                if (data.status === 'success') {
+                    // Mostrar el modal post-facturación
+                    ultimaVentaId = ventaId;
+                    modalVentaId.textContent = '#' + ventaId;
+                    modalCae.textContent = data.cae || '-';
+                    modalEstadoDisplay.textContent = `Comprobante: ${data.tipo_comprobante_display} | N° ${data.numero_comprobante}`;
+
+                    // Detectar servicio de impresión
+                    detectarServicioImpresion().then(disponible => {
+                        if (disponible) {
+                            avisoSinServicio.classList.add('d-none');
+                            btnImprimirTicket.disabled = false;
+                            btnImprimirTicket.classList.remove('btn-secondary');
+                            btnImprimirTicket.classList.add('btn-success');
+                        } else {
+                            avisoSinServicio.classList.remove('d-none');
+                            btnImprimirTicket.disabled = true;
+                            btnImprimirTicket.classList.remove('btn-success');
+                            btnImprimirTicket.classList.add('btn-secondary');
+                        }
+                    });
+
+                    overlayPostFacturacion.style.display = 'flex';
+                } else {
+                    alert('❌ Error: ' + data.message);
+                    boton.disabled = false;
+                    boton.innerHTML = textoOriginal;
+                }
+            } catch (err) {
+                alert('❌ Error de conexión: ' + err.message);
+                boton.disabled = false;
+                boton.innerHTML = textoOriginal;
+            }
+        });
+    });
+
+    // =========================================================
+    // 🔽 NUEVO: BOTÓN RENDIR (para ventas en ENTREGADO)
+    // =========================================================
+    document.querySelectorAll('.btn-rendir-venta').forEach(btn => {
+        btn.addEventListener('click', async function () {
+            const ventaId = this.dataset.ventaId;
+            const boton = this;
+            const textoOriginal = boton.innerHTML;
+
+            const ok = await confirmAsync(
+                '¿Rendir la venta <strong>#' + ventaId + '</strong>?<br><br>' +
+                'Confirmás que el repartidor volvió con la plata y el stock sobrante.<br>' +
+                'La venta pasará a estado <strong>COMPLETADO</strong>.',
+                {
+                    textoAceptar: 'Sí, rendir',
+                    textoCancelar: 'Cancelar',
+                    tipo: 'info',
+                }
+            );
+            if (!ok) return;
+
+            boton.disabled = true;
+            boton.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+
+            try {
+                const resp = await fetch(`/ventas/${ventaId}/rendir/`, {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRFToken': '{{ csrf_token }}',
+                        'Content-Type': 'application/json',
+                    },
+                });
+
+                const data = await resp.json();
+
+                if (data.status === 'success') {
+                    alert('✅ Venta rendida correctamente.');
+                    location.reload();
+                } else {
+                    alert('❌ Error: ' + data.message);
+                    boton.disabled = false;
+                    boton.innerHTML = textoOriginal;
+                }
+            } catch (err) {
+                alert('❌ Error de conexión: ' + err.message);
+                boton.disabled = false;
+                boton.innerHTML = textoOriginal;
+            }
+        });
+    });
+
+    // =========================================================
+    // IMPRESIÓN SILENCIOSA (idéntico al POS)
+    // =========================================================
+    async function detectarServicioImpresion() {
+        try {
+            const r = await fetch('http://127.0.0.1:8085/health', { cache: 'no-store' });
+            return r.ok;
+        } catch {
+            return false;
+        }
+    }
+
+    btnImprimirTicket.addEventListener('click', async function () {
+        if (!ultimaVentaId) return;
+
+        const textoOriginal = txtBtnImprimir.textContent;
+        btnImprimirTicket.disabled = true;
+        txtBtnImprimir.textContent = 'Imprimiendo...';
+
+        try {
+            const respTicket = await fetch(`/ventas/ticket-texto/${ultimaVentaId}/`);
+            const ticketData = await respTicket.json();
+
+            if (!ticketData.success) {
+                alert('Error al generar el ticket: ' + (ticketData.error || 'desconocido'));
+                btnImprimirTicket.disabled = false;
+                txtBtnImprimir.textContent = textoOriginal;
+                return;
+            }
+
+            const respPrint = await fetch('http://127.0.0.1:8085/print', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    contenido: ticketData.ticket_texto,
+                    tipo: 'ticket',
+                    cortar: true,
+                    modo: 'texto',
+                }),
+            });
+
+            const printData = await respPrint.json();
+
+            if (printData.success) {
+                txtBtnImprimir.textContent = '✅ ¡Impreso!';
+                setTimeout(() => {
+                    txtBtnImprimir.textContent = textoOriginal;
+                    btnImprimirTicket.disabled = false;
+                }, 2000);
+            } else {
+                alert('Error al imprimir: ' + (printData.error || 'desconocido'));
+                btnImprimirTicket.disabled = false;
+                txtBtnImprimir.textContent = textoOriginal;
+            }
+        } catch (err) {
+            console.error('[Historial] Error imprimiendo:', err);
+            alert('No se pudo conectar con el servicio de impresión.\n\n' +
+                  'Verificá que esté corriendo en la PC.');
+            btnImprimirTicket.disabled = false;
+            txtBtnImprimir.textContent = textoOriginal;
+        }
+    });
+
+    // =========================================================
+    // VER FACTURA A4
+    // =========================================================
+    btnImprimirFactura.addEventListener('click', function () {
+        if (ultimaVentaId) {
+            window.open(`/ventas/comprobante/${ultimaVentaId}/factura/`, '_blank');
+        }
+    });
+
+    // =========================================================
+    // CERRAR MODAL Y RECARGAR
+    // =========================================================
+    btnCerrarModal.addEventListener('click', function () {
+        overlayPostFacturacion.style.display = 'none';
+        location.reload();
+    });
+
+});
+</script>
 {% endblock %}

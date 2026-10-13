@@ -1,4 +1,4 @@
-from django.urls import path
+from django.urls import include, path
 from . import views
 
 app_name = 'ventas'
@@ -29,7 +29,6 @@ urlpatterns = [
     path('repartidores/crear/', views.crear_repartidor_view, name='crear_repartidor'),
     path('repartidores/<int:repartidor_id>/editar/', views.editar_repartidor_view, name='editar_repartidor'),
     path('marcar-entregado-admin/<int:venta_id>/', views.marcar_entregado_admin_ajax, name='marcar_entregado_admin'),
-    path('marcar-entregado-admin/<int:venta_id>/', views.marcar_entregado_admin_ajax, name='marcar_entregado_admin'),
     path('repartidores/<int:repartidor_id>/baja/', views.dar_baja_repartidor_view, name='dar_baja_repartidor'),
     path('repartidores/<int:repartidor_id>/reactivar/', views.reactivar_repartidor_view, name='reactivar_repartidor'),
     path('clientes/', views.lista_clientes_view, name='lista_clientes'),
@@ -38,4 +37,11 @@ urlpatterns = [
     path('informe/<int:informe_id>/imprimir/', views.imprimir_informe_view, name='imprimir_informe'),
     path('informes/', views.lista_informes_view, name='lista_informes'),
     path('ticket-texto/<int:venta_id>/', views.ticket_texto_ajax, name='ticket_texto_ajax'),
+
+    # 🔽 CORREGIDO: sin "ventas/" al principio
+    path('<int:venta_id>/facturar/', views.facturar_venta_existente, name='facturar_venta_existente'),
+    path('<int:venta_id>/rendir/', views.rendir_venta, name='rendir_venta'),
+    path('repartidores/<int:repartidor_id>/pendientes/', views.repartidor_pendientes_view, name='repartidor_pendientes'),
+    path('repartidores/<int:repartidor_id>/rendir-todos/', views.rendir_todos_repartidor, name='rendir_todos_repartidor'),
+    path('repartidores-con-deuda/', views.repartidores_con_deuda_view, name='repartidores_con_deuda'),
 ]

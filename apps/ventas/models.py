@@ -499,6 +499,14 @@ class Venta(models.Model):
         help_text='Para cuentas corrientes con plazo.',
     )
 
+    turno_origen = models.ForeignKey(
+        'CajaTurno',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='ventas_originadas',
+        help_text='Turno donde se generó originalmente (por si fue heredado)'
+    )
+
     class Meta:
         verbose_name = "Venta"
         verbose_name_plural = "Ventas"

@@ -42,10 +42,12 @@
                             <div class="col-12 col-sm-6">
                                 <label for="condicion_iva" class="form-label fw-bold small">Condición frente al IVA</label>
                                 <select class="form-select" id="condicion_iva" name="condicion_iva">
-                                    <option value="Consumidor Final" selected>Consumidor Final</option>
-                                    <option value="Responsable Inscripto">Responsable Inscripto</option>
-                                    <option value="Monotributo">Monotributo</option>
-                                    <option value="Exento">Exento</option>
+                                    <option value="5" selected>Consumidor Final</option>
+                                    <option value="1">IVA Responsable Inscripto</option>
+                                    <option value="6">Responsable Monotributo</option>
+                                    <option value="4">IVA Sujeto Exento</option>
+                                    <option value="7">Sujeto No Categorizado</option>
+                                    <option value="15">IVA No Alcanzado</option>
                                 </select>
                             </div>
                         </div>
@@ -95,7 +97,6 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // Formateo automático del CUIT mientras se escribe: 20-12345678-9
     inputCuit.addEventListener('input', function (e) {
-        // Al escribir, quitar el estado inválido
         inputCuit.classList.remove('is-invalid');
 
         let v = e.target.value.replace(/\D/g, '').slice(0, 11);
@@ -110,7 +111,6 @@ document.addEventListener('DOMContentLoaded', function () {
     btn.addEventListener('click', function () {
         const cuit = inputCuit.value.replace(/\D/g, '');
 
-        // Validación local
         if (cuit.length !== 11) {
             inputCuit.classList.add('is-invalid');
             statusEl.className = 'text-danger d-block mt-1';
@@ -118,7 +118,6 @@ document.addEventListener('DOMContentLoaded', function () {
             return;
         }
 
-        // UI: estado de carga
         inputCuit.classList.remove('is-invalid');
         statusEl.className = 'text-muted d-block mt-1';
         statusEl.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Consultando ARCA...';
@@ -132,9 +131,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     inputCuit.classList.add('is-invalid');
                     const msg = res.error || 'No se pudo obtener datos.';
 
-                    // Distinguir por tipo de error
                     if (res.tipo === 'no_encontrado' || res.tipo === 'sin_datos') {
-                        // Alert informativo, pero dejamos cargar manualmente
                         alert('⚠️ CUIT no encontrado\n\n' + msg);
                     } else if (res.tipo === 'autenticacion' || res.tipo === 'configuracion') {
                         alert('🔧 Error de configuración\n\n' + msg);
@@ -153,7 +150,6 @@ document.addEventListener('DOMContentLoaded', function () {
                 const d = res.data;
                 inputCuit.classList.remove('is-invalid');
 
-                // Rellenar campos de texto
                 const setVal = (id, val) => {
                     const el = document.getElementById(id);
                     if (el && val) el.value = val;
@@ -161,27 +157,56 @@ document.addEventListener('DOMContentLoaded', function () {
                 setVal('nombre', d.nombre);
                 setVal('direccion', d.direccion);
 
-                // Rellenar el select de condición IVA
+                // 🔽 NUEVO: Rellenar el select de condición IVA con mapeo texto → código
                 const selectIva = document.getElementById('condicion_iva');
                 if (selectIva && d.condicion_iva) {
-                    let opt = Array.from(selectIva.options).find(o => o.value === d.condicion_iva);
-                    if (!opt) {
-                        // Fallback: buscar por coincidencia parcial
-                        const upper = String(d.condicion_iva).toUpperCase();
-                        opt = Array.from(selectIva.options).find(o =>
+                    const MAPEO_IVA = {
+                        'IVA RESPONSABLE INSCRIPTO': '1',
+                        'RESPONSABLE INSCRIPTO': '1',
+                        'IVA SUJETO EXENTO': '4',
+                        'SUJETO EXENTO': '4',
+                        'EXENTO': '4',
+                        'CONSUMIDOR FINAL': '5',
+                        'RESPONSABLE MONOTRIBUTO': '6',
+                        'MONOTRIBUTO': '6',
+                        'SUJETO NO CATEGORIZADO': '7',
+                        'IVA NO ALCANZADO': '15',
+                    };
+
+                    const upper = String(d.condicion_iva).toUpperCase().trim();
+                    let codigo = null;
+
+                    // Buscar coincidencia exacta o parcial
+                    for (const [texto, cod] of Object.entries(MAPEO_IVA)) {
+                        if (upper === texto || upper.includes(texto) || texto.includes(upper)) {
+                            codigo = cod;
+                            break;
+                        }
+                    }
+
+                    // Si ya viene un código numérico, usarlo directo
+                    if (!codigo && /^\d+$/.test(upper)) {
+                        codigo = upper;
+                    }
+
+                    // Fallback: buscar por texto de las opciones
+                    if (!codigo) {
+                        const opt = Array.from(selectIva.options).find(o =>
                             o.text.toUpperCase().includes(upper) ||
                             upper.includes(o.text.toUpperCase().trim())
                         );
+                        if (opt) codigo = opt.value;
                     }
-                    if (opt) selectIva.value = opt.value;
+
+                    if (codigo) {
+                        selectIva.value = codigo;
+                    }
                 }
 
-                // Confirmación visual
                 statusEl.className = 'text-success d-block mt-1';
                 statusEl.innerHTML = '<i class="fas fa-check-circle"></i> Datos cargados desde ARCA.';
             })
             .catch(err => {
-                // Error de red / servidor caído / JSON inválido
                 inputCuit.classList.add('is-invalid');
                 statusEl.className = 'text-danger d-block mt-1';
                 statusEl.innerHTML = '<i class="fas fa-exclamation-circle"></i> Error de conexión con el servidor.';

@@ -10,6 +10,8 @@ urlpatterns = [
     path('productos/', include('apps.productos.urls')),
     path('usuarios/', include('apps.usuarios.urls')),
     path('configuracion/', include('apps.configuracion.urls')),
+    path('session_security/', include('session_security.urls')),
+    path('alertas/', include('apps.alertas.urls')),
 ]
 
 if settings.DEBUG:

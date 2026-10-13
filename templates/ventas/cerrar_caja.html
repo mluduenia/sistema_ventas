@@ -17,6 +17,43 @@
             </a>
         </div>
 
+        <!-- 🔽 AVISO: REMITOS SIN RENDIR -->
+        {% if cantidad_remitos_sin_rendir > 0 %}
+        <div class="alert alert-warning border-0 shadow-sm mb-3">
+            <h5 class="fw-bold mb-2">
+                <i class="fas fa-exclamation-triangle me-2"></i>
+                Atención: tenés remitos sin rendir
+            </h5>
+            <p class="mb-2">
+                Hay <strong>{{ cantidad_remitos_sin_rendir }}</strong> remito(s) sin rendir por un total de
+                <strong class="text-danger">${{ total_pendiente|floatformat:2 }}</strong>.
+            </p>
+            <p class="mb-2 small">
+                Si cerrás la caja ahora, el cobro quedará <strong>pendiente para el próximo turno</strong>
+                y se incluirá en el Informe Z como "pendiente de cobro".
+            </p>
+            <details class="small">
+                <summary class="fw-bold" style="cursor: pointer;">
+                    <i class="fas fa-list me-1"></i> Ver detalle de los {{ cantidad_remitos_sin_rendir }} remitos
+                </summary>
+                <ul class="mt-2 mb-0 ps-3">
+                    {% for r in remitos_sin_rendir %}
+                    <li>
+                        <strong>#{{ r.id }}</strong> —
+                        {{ r.cliente.nombre|default:"Consumidor Final" }} —
+                        ${{ r.total|floatformat:2 }}
+                        {% if r.repartidor %}
+                            <span class="badge bg-secondary ms-1">
+                                <i class="fas fa-motorcycle me-1"></i>{{ r.repartidor.username }}
+                            </span>
+                        {% endif %}
+                    </li>
+                    {% endfor %}
+                </ul>
+            </details>
+        </div>
+        {% endif %}
+
         <div class="card border-0 shadow-lg mb-4">
             <div class="card-header bg-dark text-white py-3 d-flex justify-content-between align-items-center">
                 <h5 class="mb-0 fw-bold"><i class="fas fa-calculator me-2 text-warning"></i> Arqueo y Relevo de Caja</h5>
@@ -103,6 +140,28 @@
         </div>
     </div>
 </div>
+
+<!-- ========================================================= -->
+<!-- MODAL DE ERROR (para reemplazar alert)                    -->
+<!-- ========================================================= -->
+<div class="modal fade" id="modalError" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title fw-bold">
+                    <i class="fas fa-exclamation-triangle me-2"></i> Error al cerrar la caja
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+                <p id="modalErrorMensaje" class="mb-0"></p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary fw-bold" data-bs-dismiss="modal">Entendido</button>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block extra_js %}
@@ -129,6 +188,22 @@
     })();
 
     // =========================================================
+    // HELPER: mostrar error en modal (o alert como fallback)
+    // =========================================================
+    function mostrarError(mensaje) {
+        const modalEl = document.getElementById('modalError');
+        const spanMensaje = document.getElementById('modalErrorMensaje');
+
+        if (modalEl && spanMensaje) {
+            spanMensaje.innerHTML = mensaje;
+            const modal = new bootstrap.Modal(modalEl);
+            modal.show();
+        } else {
+            alert(mensaje.replace(/<br\s*\/?>/gi, '\n'));
+        }
+    }
+
+    // =========================================================
     // CIERRE DE CAJA + IMPRESIÓN DIRECTA DEL Z
     // =========================================================
     (function() {
@@ -136,6 +211,9 @@
 
         let confirmado = false;
         let enviando = false;
+
+        const cantidadPendientes = {{ cantidad_remitos_sin_rendir|default:0 }};
+        const totalPendiente = "{{ total_pendiente|default:0|floatformat:2 }}";
 
         document.addEventListener('submit', async function(e) {
             const form = e.target;
@@ -152,9 +230,29 @@
                 return;
             }
 
-            // Modal de confirmación
+            // Armar el mensaje según si hay o no remitos sin rendir
+            let mensaje;
+            let tipoModal;
+            let textoAceptar;
+
+            if (cantidadPendientes > 0) {
+                mensaje = `⚠️ TENÉS ${cantidadPendientes} REMITO(S) SIN RENDIR por un total de $${totalPendiente}.<br><br>` +
+                          `<strong>Si cerrás la caja ahora:</strong><br>` +
+                          `• El cobro quedará PENDIENTE para el próximo turno.<br>` +
+                          `• Se incluirá en el Informe Z como "pendiente de cobro".<br><br>` +
+                          `¿Confirmás el cierre igual?`;
+                tipoModal = 'warning';
+                textoAceptar = 'Cerrar con pendientes';
+            } else {
+                mensaje = '⚠️ <strong>ESTO CIERRA EL TURNO DEFINITIVAMENTE.</strong><br><br>' +
+                          'Se va a emitir el Informe Z.<br>¿Confirmás el cierre?';
+                tipoModal = 'danger';
+                textoAceptar = 'Cerrar Turno';
+            }
+
+            // Fallback si no hay confirmAsync
             if (typeof window.confirmAsync !== 'function') {
-                if (window.confirm('⚠️ ESTO CIERRA EL TURNO DEFINITIVAMENTE.\n\nSe va a emitir el Informe Z.\n¿Confirmás el cierre?')) {
+                if (window.confirm(mensaje.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, ''))) {
                     confirmado = true;
                     enviando = true;
                     enviarFormulario(form);
@@ -162,10 +260,11 @@
                 return;
             }
 
-            const ok = await window.confirmAsync(
-                '⚠️ ESTO CIERRA EL TURNO DEFINITIVAMENTE.\n\nSe va a emitir el Informe Z.\n¿Confirmás el cierre?',
-                { tipo: 'danger', textoAceptar: 'Cerrar Turno', textoCancelar: 'Cancelar' }
-            );
+            const ok = await window.confirmAsync(mensaje, {
+                tipo: tipoModal,
+                textoAceptar: textoAceptar,
+                textoCancelar: 'Cancelar',
+            });
 
             if (ok) {
                 confirmado = true;
@@ -193,45 +292,70 @@
                     cache: 'no-store',
                 });
 
-                if (!response.ok) {
-                    throw new Error('Error HTTP ' + response.status);
+                // 🔽 DETECTAR SI LA RESPUESTA ES JSON O HTML
+                const contentType = response.headers.get('content-type') || '';
+                if (!contentType.includes('application/json')) {
+                    const html = await response.text();
+                    console.error('[cerrar_caja] Respuesta no-JSON:', html.substring(0, 500));
+
+                    let msg = `El servidor devolvió HTML en vez de JSON (HTTP ${response.status}).`;
+                    if (html.includes('UnboundLocalError')) {
+                        msg += '<br><br><strong>Error interno:</strong> variable no definida en la generación del Informe Z. Revisá la consola de Django.';
+                    } else if (html.includes('Traceback')) {
+                        msg += '<br><br><strong>Error interno del servidor.</strong> Revisá la consola de Django para el traceback completo.';
+                    } else if (response.status === 403) {
+                        msg = 'No tenés permisos para cerrar la caja, o el token CSRF expiró. Recargá la página e intentá de nuevo.';
+                    } else if (response.status === 500) {
+                        msg = 'Error 500 del servidor. Revisá la consola de Django.';
+                    }
+                    throw new Error(msg);
                 }
 
                 const data = await response.json();
 
                 if (data.status !== 'success' || !data.informe_texto) {
-                    alert('Error: ' + (data.message || 'No se pudo cerrar la caja'));
+                    // 🔽 Si el backend devolvió un error controlado
+                    let msg = data.message || 'No se pudo cerrar la caja.';
+                    if (data.informe_id) {
+                        msg += `<br><br>La caja se cerró pero falló el ticket. <a href="/ventas/informes/imprimir/${data.informe_id}/" class="btn btn-sm btn-primary mt-2">Ver Informe Z</a>`;
+                    }
+                    mostrarError(msg);
                     confirmado = false;
                     enviando = false;
                     return;
                 }
 
-                // 2. Imprimir directo al servicio térmico (sin abrir pestaña)
-                const printResp = await fetch('http://127.0.0.1:8085/print', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({
-                        contenido: data.informe_texto,
-                        tipo: 'informe_z',
-                        cortar: true,
-                        modo: 'texto',
-                    }),
-                });
+                // 2. Imprimir directo al servicio térmico
+                try {
+                    const printResp = await fetch('http://127.0.0.1:8085/print', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            contenido: data.informe_texto,
+                            tipo: 'informe_z',
+                            cortar: true,
+                            modo: 'texto',
+                        }),
+                    });
 
-                const printData = await printResp.json();
+                    const printData = await printResp.json();
 
-                // 3. Redirigir al dashboard
-                if (printData.success) {
-                    console.log('[Cierre Z] Impreso OK');
-                } else {
-                    console.warn('[Cierre Z] No se pudo imprimir:', printData.error);
+                    if (printData.success) {
+                        console.log('[Cierre Z] Impreso OK');
+                    } else {
+                        console.warn('[Cierre Z] No se pudo imprimir:', printData.error);
+                    }
+                } catch (printErr) {
+                    // No bloqueamos el cierre si falla la impresora
+                    console.warn('[Cierre Z] Error de impresión:', printErr);
                 }
 
+                // 3. Redirigir al dashboard
                 window.location.href = "{% url 'core:dashboard' %}";
 
             } catch (err) {
                 console.error('[cerrar_caja] Error:', err);
-                alert('Error al cerrar la caja: ' + err.message);
+                mostrarError('Error al cerrar la caja:<br><br>' + err.message);
                 confirmado = false;
                 enviando = false;
             }

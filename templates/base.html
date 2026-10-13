@@ -1,8 +1,17 @@
 <!DOCTYPE html>
-<html lang="es" data-bs-theme="light">
+<html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+
+    <!-- 🔽 NUEVO: aplicar tema ANTES de pintar (evita el flash de tema) -->
+    <script>
+        (function() {
+            const theme = localStorage.getItem('theme') || 'light';
+            document.documentElement.setAttribute('data-bs-theme', theme);
+        })();
+    </script>
+
     <title>{% block title %}Sistema POS{% endblock %}</title>
 
     <!-- Bootstrap 5 CSS -->
@@ -27,6 +36,7 @@
 
     {% block extra_css %}{% endblock %}
     {% block extra_head %}{% endblock %}
+    {% include "session_security/all.html" %}
 </head>
 <body>
 
@@ -71,11 +81,11 @@
                 {% if request.user.rol != 'repartidor' %}
                 {% if modulos.punto_venta or modulos.preventa or modulos.reparto or modulos.cuenta_corriente %}
                 <div class="nav-item">
-                    <a class="nav-link text-white-50 d-flex align-items-center justify-content-between py-2 px-3 rounded" data-bs-toggle="collapse" href="#submenuVentas" role="button" aria-expanded="{% if 'ventas' in request.path and 'reportes' not in request.path and 'mis-pedidos' not in request.path and 'sucursal' not in request.path and 'clientes' not in request.path and 'repartidores' not in request.path %}true{% else %}false{% endif %}">
+                    <a class="nav-link text-white-50 d-flex align-items-center justify-content-between py-2 px-3 rounded" data-bs-toggle="collapse" href="#submenuVentas" role="button" aria-expanded="{% if 'ventas' in request.path and 'reportes' not in request.path and 'mis-pedidos' not in request.path and 'sucursal' not in request.path and 'clientes' not in request.path %}true{% else %}false{% endif %}">
                         <span class="d-flex align-items-center gap-2"><i class="fas fa-shopping-cart w-20"></i> Ventas</span>
                         <i class="fas fa-chevron-down small"></i>
                     </a>
-                    <div class="collapse {% if 'ventas' in request.path and 'reportes' not in request.path and 'mis-pedidos' not in request.path and 'sucursal' not in request.path and 'clientes' not in request.path and 'repartidores' not in request.path %}show{% endif %}" id="submenuVentas">
+                    <div class="collapse {% if 'ventas' in request.path and 'reportes' not in request.path and 'mis-pedidos' not in request.path and 'sucursal' not in request.path and 'clientes' not in request.path %}show{% endif %}" id="submenuVentas">
                         <nav class="nav nav-pills flex-column ps-3 gap-1 mt-1">
                             {% if modulos.punto_venta %}
                             <a href="{% url 'ventas:pos' %}" class="nav-link text-white-50 py-1 px-3 rounded small {% if request.resolver_match.url_name == 'pos' %}active text-white{% endif %}">
@@ -88,11 +98,21 @@
                             {% if modulos.reparto %}
                             <a href="{% url 'ventas:remitos_pendientes' %}" class="nav-link text-white-50 py-1 px-3 rounded small {% if request.resolver_match.url_name == 'remitos_pendientes' %}active text-white{% endif %}">
                                 <i class="fas fa-file-invoice me-2 text-warning"></i> Remitos Pendientes
+                                {% if cantidad_remitos_pendientes_global and cantidad_remitos_pendientes_global > 0 %}
+                                    <span class="badge bg-danger ms-1">{{ cantidad_remitos_pendientes_global }}</span>
+                                {% endif %}
+                            </a>
+                            <!-- 🔽 NUEVO: Repartidores con Deuda (dentro de Ventas) -->
+                            <a href="{% url 'ventas:repartidores_con_deuda' %}" class="nav-link text-white-50 py-1 px-3 rounded small {% if 'repartidores-con-deuda' in request.path %}active text-white{% endif %}">
+                                <i class="fas fa-hand-holding-usd me-2 text-danger"></i> Repartidores con Deuda
+                                {% if cantidad_remitos_pendientes_global and cantidad_remitos_pendientes_global > 0 %}
+                                    <span class="badge bg-danger ms-1">{{ cantidad_remitos_pendientes_global }}</span>
+                                {% endif %}
                             </a>
                             {% endif %}
                             {% if modulos.cuenta_corriente %}
                             <a href="{% url 'ventas:cuentas_corrientes' %}" class="nav-link text-white-50 py-1 px-3 rounded small {% if request.resolver_match.url_name == 'cuentas_corrientes' %}active text-white{% endif %}">
-                                <i class="fas fa-hand-holding-usd me-2 text-info"></i> Cuentas Corrientes
+                                <i class="fas fa-hand-holding-usd me-2"></i> Cuentas Corrientes
                             </a>
                             {% endif %}
                             {% if modulos.punto_venta %}
@@ -129,7 +149,7 @@
                             </a>
                             {% if modulos.reparto %}
                             {% if request.user.is_superuser or request.user.rol == 'gerente' or request.user.rol == 'cajero' %}
-                            <a href="{% url 'ventas:lista_repartidores' %}" class="nav-link text-white-50 py-1 px-3 rounded small {% if 'repartidores' in request.path %}active text-white{% endif %}">
+                            <a href="{% url 'ventas:lista_repartidores' %}" class="nav-link text-white-50 py-1 px-3 rounded small {% if 'repartidores' in request.path and 'con-deuda' not in request.path %}active text-white{% endif %}">
                                 <i class="fas fa-motorcycle me-2"></i> Repartidores
                             </a>
                             {% endif %}
@@ -265,6 +285,29 @@
                 {% endfor %}
             {% endif %}
 
+            <!-- ALERTA GLOBAL DE REMITOS PENDIENTES -->
+            {% if request.user.is_authenticated and request.user.rol != 'repartidor' %}
+                {% if cantidad_remitos_pendientes_global and cantidad_remitos_pendientes_global > 0 %}
+                    <div class="alert alert-warning alert-dismissible fade show shadow-sm border-0 d-flex justify-content-between align-items-center" role="alert">
+                        <div>
+                            <i class="fas fa-exclamation-triangle me-2"></i>
+                            <strong>Atención:</strong>
+                            Tenés <strong>{{ cantidad_remitos_pendientes_global }}</strong> remito(s) sin rendir
+                            por un total de
+                            <strong class="text-danger">${{ total_remitos_pendientes_global|floatformat:2 }}</strong>.
+                        </div>
+                        <div class="d-flex align-items-center gap-2">
+                            {% if modulos.reparto %}
+                            <a href="{% url 'ventas:repartidores_con_deuda' %}" class="btn btn-sm btn-warning fw-bold">
+                                <i class="fas fa-list me-1"></i> Ver repartidores
+                            </a>
+                            {% endif %}
+                            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Cerrar"></button>
+                        </div>
+                    </div>
+                {% endif %}
+            {% endif %}
+
             {% block content %}{% endblock %}
         </main>
     </div>
@@ -289,7 +332,7 @@
         <div class="offcanvas-body p-3">
             <nav class="nav nav-pills flex-column gap-2">
                 {% if request.user.is_authenticated %}
-                <a href="{% url 'core:dashboard' %}" class="nav-link text-body py-2"><i class="fas fa-chart-line me-2 text-primary"></i> Dashboard</a>
+                <a href="{% url 'core:dashboard' %}" class="nav-link text-body py-2"><i class="fas fa-chart-line me-2"></i> Dashboard</a>
                 {% endif %}
 
                 {% if request.user.rol == 'repartidor' %}
@@ -298,50 +341,62 @@
 
                 {% if request.user.rol != 'repartidor' %}
                 {% if modulos.punto_venta %}
-                <a href="{% url 'ventas:pos' %}" class="nav-link text-body py-2"><i class="fas fa-cash-register me-2 text-primary"></i> Punto de Venta</a>
+                <a href="{% url 'ventas:pos' %}" class="nav-link text-body py-2"><i class="fas fa-cash-register me-2"></i> Punto de Venta</a>
                 {% endif %}
-                <a href="{% url 'ventas:lista_ventas' %}" class="nav-link text-body py-2"><i class="fas fa-list-alt me-2 text-primary"></i> Historial de Ventas</a>
+                <a href="{% url 'ventas:lista_ventas' %}" class="nav-link text-body py-2"><i class="fas fa-list-alt me-2"></i> Historial de Ventas</a>
                 {% if modulos.reparto %}
-                <a href="{% url 'ventas:remitos_pendientes' %}" class="nav-link text-body py-2"><i class="fas fa-file-invoice me-2 text-warning"></i> Remitos Pendientes</a>
+                <a href="{% url 'ventas:remitos_pendientes' %}" class="nav-link text-body py-2">
+                    <i class="fas fa-file-invoice me-2 text-warning"></i> Remitos Pendientes
+                    {% if cantidad_remitos_pendientes_global and cantidad_remitos_pendientes_global > 0 %}
+                        <span class="badge bg-danger ms-1">{{ cantidad_remitos_pendientes_global }}</span>
+                    {% endif %}
+                </a>
+                <!-- 🔽 NUEVO: Repartidores con Deuda (móvil, dentro de Ventas) -->
+                <a href="{% url 'ventas:repartidores_con_deuda' %}" class="nav-link text-body py-2">
+                    <i class="fas fa-hand-holding-usd me-2 text-danger"></i> Repartidores con Deuda
+                    {% if cantidad_remitos_pendientes_global and cantidad_remitos_pendientes_global > 0 %}
+                        <span class="badge bg-danger ms-1">{{ cantidad_remitos_pendientes_global }}</span>
+                    {% endif %}
+                </a>
                 {% endif %}
                 {% if modulos.cuenta_corriente %}
-                <a href="{% url 'ventas:cuentas_corrientes' %}" class="nav-link text-body py-2"><i class="fas fa-hand-holding-usd me-2 text-info"></i> Cuentas Corrientes</a>
+                <a href="{% url 'ventas:cuentas_corrientes' %}" class="nav-link text-body py-2"><i class="fas fa-hand-holding-usd me-2"></i> Cuentas Corrientes</a>
                 {% endif %}
                 {% if modulos.punto_venta %}
                 <a href="{% url 'ventas:cerrar_caja' %}" class="nav-link text-warning py-2"><i class="fas fa-calculator me-2"></i> Arqueo / Cerrar Turno</a>
-                <a href="{% url 'ventas:lista_informes' %}" class="nav-link text-body py-2"><i class="fas fa-file-invoice me-2 text-primary"></i> Informes X / Z</a>
+                <a href="{% url 'ventas:lista_informes' %}" class="nav-link text-body py-2"><i class="fas fa-file-invoice me-2"></i> Informes X / Z</a>
                 {% endif %}
 
                 <hr class="my-1 border-secondary opacity-25">
                 <span class="small text-muted px-2">Config. de Ventas</span>
                 {% if modulos.multi_sucursal %}
-                <a href="{% url 'configuracion:lista_sucursales' %}" class="nav-link text-body py-2"><i class="fas fa-store me-2 text-secondary"></i> Sucursales</a>
+                <a href="{% url 'configuracion:lista_sucursales' %}" class="nav-link text-body py-2"><i class="fas fa-store me-2"></i> Sucursales</a>
                 {% endif %}
-                <a href="{% url 'ventas:lista_clientes' %}" class="nav-link text-body py-2"><i class="fas fa-users me-2 text-secondary"></i> Clientes</a>
+                <a href="{% url 'ventas:lista_clientes' %}" class="nav-link text-body py-2"><i class="fas fa-users me-2"></i> Clientes</a>
                 {% if modulos.reparto %}
                 {% if request.user.is_superuser or request.user.rol == 'gerente' or request.user.rol == 'cajero' %}
-                <a href="{% url 'ventas:lista_repartidores' %}" class="nav-link text-body py-2"><i class="fas fa-motorcycle me-2 text-secondary"></i> Repartidores</a>
+                <a href="{% url 'ventas:lista_repartidores' %}" class="nav-link text-body py-2"><i class="fas fa-motorcycle me-2"></i> Repartidores</a>
                 {% endif %}
                 {% endif %}
 
                 <hr class="my-1 border-secondary opacity-25">
-                <a href="{% url 'productos:lista_productos' %}" class="nav-link text-body py-2"><i class="fas fa-boxes me-2 text-primary"></i> Productos / Stock</a>
-                <a href="{% url 'productos:movimientos_stock' %}" class="nav-link text-body py-2"><i class="fas fa-exchange-alt me-2 text-primary"></i> Movimientos de Stock</a>
+                <a href="{% url 'productos:lista_productos' %}" class="nav-link text-body py-2"><i class="fas fa-boxes me-2"></i> Productos / Stock</a>
+                <a href="{% url 'productos:movimientos_stock' %}" class="nav-link text-body py-2"><i class="fas fa-exchange-alt me-2"></i> Movimientos de Stock</a>
 
                 {% if request.user.is_superuser or request.user.rol == 'gerente' or request.user.rol == 'cajero' %}
-                <a href="{% url 'productos:lista_categorias' %}" class="nav-link text-body py-2"><i class="fas fa-tags me-2 text-primary"></i> Rubros</a>
-                <a href="{% url 'productos:lista_proveedores' %}" class="nav-link text-body py-2"><i class="fas fa-truck me-2 text-primary"></i> Proveedores</a>
+                <a href="{% url 'productos:lista_categorias' %}" class="nav-link text-body py-2"><i class="fas fa-tags me-2"></i> Rubros</a>
+                <a href="{% url 'productos:lista_proveedores' %}" class="nav-link text-body py-2"><i class="fas fa-truck me-2"></i> Proveedores</a>
                 {% endif %}
 
-                <a href="{% url 'ventas:reportes' %}" class="nav-link text-body py-2"><i class="fas fa-chart-bar me-2 text-primary"></i> Reportes y Estadísticas</a>
+                <a href="{% url 'ventas:reportes' %}" class="nav-link text-body py-2"><i class="fas fa-chart-bar me-2"></i> Reportes y Estadísticas</a>
                 {% endif %}
 
                 {% if request.user.is_superuser or request.user.rol == 'gerente' %}
                 <hr class="my-1 border-secondary opacity-25">
                 <span class="small text-muted px-2">Configuración</span>
-                <a href="{% url 'configuracion:configuracion_general' %}" class="nav-link text-body py-2"><i class="fas fa-building me-2 text-primary"></i> Datos de Empresa</a>
-                <a href="{% url 'configuracion:modulos_negocio' %}" class="nav-link text-body py-2"><i class="fas fa-sliders-h me-2 text-primary"></i> Módulos de Negocio</a>
-                <a href="{% url 'configuracion:auditoria' %}" class="nav-link text-body py-2"><i class="fas fa-history me-2 text-primary"></i> Auditoría</a>
+                <a href="{% url 'configuracion:configuracion_general' %}" class="nav-link text-body py-2"><i class="fas fa-building me-2"></i> Datos de Empresa</a>
+                <a href="{% url 'configuracion:modulos_negocio' %}" class="nav-link text-body py-2"><i class="fas fa-sliders-h me-2"></i> Módulos de Negocio</a>
+                <a href="{% url 'configuracion:auditoria' %}" class="nav-link text-body py-2"><i class="fas fa-history me-2"></i> Auditoría</a>
                 {% endif %}
             </nav>
         </div>
@@ -485,7 +540,6 @@
             btnCancelar.className = 'btn btn-secondary fw-bold';
             btnCancelar.innerHTML = `<i class="fas fa-times me-1"></i> ${textoCancelar}`;
 
-            // Eliminar listeners previos clonando
             const newAceptar = btnAceptar.cloneNode(true);
             const newCancelar = btnCancelar.cloneNode(true);
             btnAceptar.replaceWith(newAceptar);
@@ -519,8 +573,7 @@
     const themeBtn = document.getElementById('btnThemeToggle');
     const themeIcon = document.getElementById('themeIcon');
 
-    const currentTheme = localStorage.getItem('theme') || 'light';
-    htmlEl.setAttribute('data-bs-theme', currentTheme);
+    const currentTheme = htmlEl.getAttribute('data-bs-theme') || 'light';
     actualizarIconoTema(currentTheme);
 
     themeBtn.addEventListener('click', () => {
@@ -549,10 +602,10 @@
             e.preventDefault();
         }
     });
-        // =========================================================
+
+    // =========================================================
     // IMPRESIÓN TÉRMICA - Servicio local en 127.0.0.1:8085
     // =========================================================
-
     window.servicioImpresionDisponible = async function() {
         try {
             const resp = await fetch('http://127.0.0.1:8085/health', {

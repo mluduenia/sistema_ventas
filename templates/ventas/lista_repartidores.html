@@ -85,6 +85,13 @@
                                 {% endif %}
                             </td>
                             <td class="text-center text-nowrap">
+                                <!-- 🔽 NUEVO: Ver pendientes de rendición -->
+                                <a href="{% url 'ventas:repartidor_pendientes' r.id %}"
+                                   class="btn btn-sm btn-outline-info"
+                                   title="Ver pendientes de rendición">
+                                    <i class="fas fa-hand-holding-usd"></i>
+                                </a>
+
                                 <a href="{% url 'ventas:editar_repartidor' r.id %}"
                                    class="btn btn-sm btn-outline-primary" title="Editar">
                                     <i class="fas fa-edit"></i>
@@ -153,7 +160,13 @@ document.querySelectorAll('.btn-dar-baja').forEach(btn => {
     btn.addEventListener('click', async () => {
         const id = btn.dataset.id;
         const nombre = btn.dataset.nombre;
-        if (!confirm(`¿Dar de baja a "${nombre}"?\n\nNo se elimina: se conserva todo su historial y podés reactivarlo después.`)) return;
+
+        const ok = await confirmAsync(
+            '¿Dar de baja a "' + nombre + '"?<br><br>' +
+            'No se elimina: se conserva todo su historial y podés reactivarlo después.',
+            { textoAceptar: 'Sí, dar de baja', tipo: 'warning' }
+        );
+        if (!ok) return;
 
         try {
             const resp = await fetch(`/ventas/repartidores/${id}/baja/`, {
@@ -179,7 +192,12 @@ document.querySelectorAll('.btn-reactivar').forEach(btn => {
     btn.addEventListener('click', async () => {
         const id = btn.dataset.id;
         const nombre = btn.dataset.nombre;
-        if (!confirm(`¿Reactivar a "${nombre}"?`)) return;
+
+        const ok = await confirmAsync(
+            '¿Reactivar a "' + nombre + '"?',
+            { textoAceptar: 'Sí, reactivar', tipo: 'success' }
+        );
+        if (!ok) return;
 
         try {
             const resp = await fetch(`/ventas/repartidores/${id}/reactivar/`, {

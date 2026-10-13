@@ -20,13 +20,17 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'django_extensions',
-    
+
+    # 🔽 App de terceros: caducidad de sesión
+    'session_security',
+
     # Apps alojadas en la subcarpeta apps/
     'apps.usuarios',
     'apps.core',
     'apps.productos',
     'apps.configuracion.apps.ConfiguracionConfig',
     'apps.ventas',
+    'apps.alertas.apps.AlertasConfig',   # 🔽 NUEVA
 ]
 
 AUTH_USER_MODEL = 'usuarios.Usuario'
@@ -37,9 +41,21 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'session_security.middleware.SessionSecurityMiddleware',   # 🔽 NUEVO
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
+
+# 🔽 Sesión: 3 horas de inactividad
+SESSION_SECURITY_WARN_AFTER = 60 * 60 * 3 - 300   # aviso a las 2h 55min
+SESSION_SECURITY_EXPIRE_AFTER = 60 * 60 * 3       # expira a las 3h
+
+# 🔽 Forzar expiración en el servidor
+SESSION_COOKIE_AGE = 60 * 60 * 3
+SESSION_SAVE_EVERY_REQUEST = True
+SESSION_EXPIRE_AT_BROWSER_CLOSE = False
+
+SESSION_SECURITY_INSECURE = True
 
 ROOT_URLCONF = 'sistema_ventas.urls'
 
@@ -54,9 +70,10 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
-                
+
                 'apps.configuracion.context_processors.modulos_activos',
                 'apps.configuracion.context_processors.configuracion_global',
+                'apps.ventas.context_processors.remitos_pendientes_global',
             ],
         },
     },
@@ -64,12 +81,33 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'sistema_ventas.wsgi.application'
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+# =========================================================
+# BASE DE DATOS
+# =========================================================
+# Para volver a SQLite: cambiá USE_POSTGRES a False
+USE_POSTGRES = False
+
+if USE_POSTGRES:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': 'sistema_ventas',
+            'USER': 'pos_user',
+            'PASSWORD': 'neron123',
+            'HOST': '10.0.10.220',
+            'PORT': '5432',
+            'OPTIONS': {
+                'connect_timeout': 10,
+            },
+        }
     }
-}
+else:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / 'db.sqlite3',
+        }
+    }
 
 AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},

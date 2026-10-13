@@ -236,9 +236,26 @@ def abrir_caja(request):
         )
         return redirect('core:dashboard')
 
+    # ============================================================
+    # Contar remitos pendientes de turnos anteriores
+    # ============================================================
+    remitos_heredados = Venta.objects.filter(
+        sucursal=sucursal,
+        estado__in=['PENDIENTE_ENTREGA', 'ENTREGADO'],
+        estado_cobro__in=['PENDIENTE', 'PARCIAL'],
+        es_nota_credito=False,
+        es_remito=True,
+    ).exclude(
+        estado='CANCELADO'
+    )
+
+    cantidad_heredados = remitos_heredados.count()
+    total_heredados = remitos_heredados.aggregate(t=Sum('total'))['t'] or Decimal('0.00')
+
     if request.method == 'POST':
         monto_inicial = float(request.POST.get('monto_inicial', 0.0))
 
+        # 1. Crear el nuevo turno
         turno = CajaTurno.objects.create(
             vendedor=request.user,
             sucursal=sucursal,
@@ -246,6 +263,38 @@ def abrir_caja(request):
             estado='ABIERTA',
         )
 
+        # ============================================================
+        # Reasignar remitos pendientes de turnos ANTERIORES
+        # al nuevo turno, para que se puedan rendir desde este turno
+        # y se vean en el Informe Z del cierre actual.
+        # ============================================================
+        if cantidad_heredados > 0:
+            remitos_heredados.update(
+                turno=turno,
+                # turno_origen=F('turno'),  # 🔽 comentado: el campo no existe todavía
+            )
+
+            logger.info(
+                f'Turno #{turno.id} abierto. Se heredaron {cantidad_heredados} '
+                f'remitos pendientes del turno anterior por ${total_heredados:.2f}'
+            )
+
+            registrar_log(
+                request,
+                accion='CAJA_HEREDAR_PENDIENTES',
+                descripcion=(
+                    f'{cantidad_heredados} remitos pendientes heredados al Turno #{turno.id} '
+                    f'por ${total_heredados:.2f}'
+                ),
+                modelo='CajaTurno',
+                objeto_id=turno.id,
+                datos_despues={
+                    'cantidad_heredados': cantidad_heredados,
+                    'total_heredados': float(total_heredados),
+                },
+            )
+
+        # 3. Registrar en auditoría el alta del turno
         registrar_log(
             request,
             accion='CAJA_ABRIR',
@@ -255,6 +304,7 @@ def abrir_caja(request):
             datos_despues={
                 'sucursal': sucursal.nombre,
                 'monto_inicial': monto_inicial,
+                'remitos_heredados': cantidad_heredados,
             },
         )
 
@@ -262,8 +312,10 @@ def abrir_caja(request):
 
     return render(request, 'ventas/abrir_caja.html', {
         'sucursal_asignada': sucursal,
+        'cantidad_heredados': cantidad_heredados,
+        'total_heredados': total_heredados,
+        'remitos_heredados': remitos_heredados[:10],
     })
-
 
 @login_required
 @solo_no_repartidor
@@ -290,8 +342,9 @@ def procesar_venta_ajax(request):
             repartidor_id = data.get('repartidor_id')
             vendedor_id = data.get('vendedor_id')
             accion_comprobante = data.get('accion_comprobante', 'REMITO')
-            desde_remitos = data.get('desde_remitos', False)  # 🔽 NUEVO
-            remito_ids = data.get('remito_ids', [])            # 🔽 NUEVO
+            desde_remitos = data.get('desde_remitos', False)  
+            remito_ids = data.get('remito_ids', [])        
+            direccion_entrega = data.get('direccion_entrega', '')    
         else:
             items_str = request.POST.get('items')
             if not items_str:
@@ -309,6 +362,7 @@ def procesar_venta_ajax(request):
             accion_comprobante = request.POST.get('accion_comprobante', 'REMITO')
             desde_remitos = request.POST.get('desde_remitos', 'false').lower() == 'true'
             remito_ids = request.POST.getlist('remito_ids')
+            direccion_entrega = request.POST.get('direccion_entrega', '')
 
         if not items:
             return JsonResponse({'status': 'error', 'message': 'El carrito está vacío.'}, status=400)
@@ -447,6 +501,7 @@ def procesar_venta_ajax(request):
             es_factura_de_remitos=es_factura_de_remitos,
             estado_cobro=estado_cobro_val,
             saldo_pendiente=saldo_pendiente,
+            direccion_entrega=direccion_entrega or None,
         )
         # 🔽 AGREGAR ESTAS LÍNEAS
         registrar_log(
@@ -684,7 +739,33 @@ def crear_cliente(request):
         telefono = request.POST.get('telefono')
         email = request.POST.get('email')
         direccion = request.POST.get('direccion')
-        condicion_iva = request.POST.get('condicion_iva') or 'Consumidor Final'
+
+        # 🔽 NUEVO: Normalizar condicion_iva a código AFIP
+        condicion_iva_raw = request.POST.get('condicion_iva') or '5'
+
+        MAPEO_IVA = {
+            'IVA RESPONSABLE INSCRIPTO': '1',
+            'RESPONSABLE INSCRIPTO': '1',
+            'IVA SUJETO EXENTO': '4',
+            'SUJETO EXENTO': '4',
+            'EXENTO': '4',
+            'CONSUMIDOR FINAL': '5',
+            'RESPONSABLE MONOTRIBUTO': '6',
+            'MONOTRIBUTO': '6',
+            'SUJETO NO CATEGORIZADO': '7',
+            'IVA NO ALCANZADO': '15',
+            'MONOTRIBUTISTA SOCIAL': '13',
+            'MONOTRIBUTO TRABAJADOR INDEPENDIENTE PROMOVIDO': '16',
+            'PROVEEDOR DEL EXTERIOR': '8',
+            'CLIENTE DEL EXTERIOR': '9',
+            'IVA LIBERADO - LEY Nº 19.640': '10',
+        }
+
+        cond_str = str(condicion_iva_raw).strip()
+        if cond_str.isdigit() and len(cond_str) <= 2:
+            condicion_iva = cond_str
+        else:
+            condicion_iva = MAPEO_IVA.get(cond_str.upper(), '5')
 
         # Buscar cliente existente por CUIT/DNI
         cliente_existente = None
@@ -705,7 +786,7 @@ def crear_cliente(request):
                 descripcion=f'Cliente actualizado: {nombre} (CUIT/DNI: {cuit_dni})',
                 modelo='Cliente',
                 objeto_id=cliente_existente.id,
-                datos_despues={'nombre': nombre, 'documento': cuit_dni},
+                datos_despues={'nombre': nombre, 'documento': cuit_dni, 'condicion_iva': condicion_iva},
             )
 
             messages.success(request, f'Cliente "{nombre}" ya existía. Se actualizaron sus datos.')
@@ -725,7 +806,7 @@ def crear_cliente(request):
                 descripcion=f'Cliente creado: {nombre} (CUIT/DNI: {cuit_dni})',
                 modelo='Cliente',
                 objeto_id=nuevo.id,
-                datos_despues={'nombre': nombre, 'documento': cuit_dni},
+                datos_despues={'nombre': nombre, 'documento': cuit_dni, 'condicion_iva': condicion_iva},
             )
 
             messages.success(request, 'Cliente registrado correctamente.')
@@ -754,121 +835,6 @@ def comprobante_ticket(request, venta_id):
         },
     )
 
-
-# ============================================================
-# INFORME Z - TEXTO PLANO PARA ESC/POS
-# ============================================================
-def generar_informe_z_texto(informe, config, ancho=48):
-    """
-    Genera el texto plano del Informe Z para ESC/POS (80mm, 48 caracteres).
-    """
-    def center(texto):
-        return str(texto)[:ancho].center(ancho)
-
-    def linea(char='-'):
-        return char * ancho
-
-    def dos_columnas(izq, der):
-        izq = str(izq)
-        der = str(der)
-        espacio = ancho - len(izq) - len(der)
-        if espacio < 1:
-            return izq + ' ' + der
-        return izq + ' ' * espacio + der
-
-    lineas = []
-
-    # ============================================================
-    # ENCABEZADO
-    # ============================================================
-    nombre = config.nombre_fantasia or config.razon_social or "MI COMERCIO"
-    lineas.append(center(nombre.upper()))
-    lineas.append(center(f"CUIT: {config.cuit or '-'}"))
-    if config.direccion:
-        lineas.append(center(config.direccion))
-    lineas.append(linea('='))
-
-    # ============================================================
-    # TÍTULO
-    # ============================================================
-    lineas.append(center("*** CIERRE Z ***"))
-    lineas.append(center(f"Nro {informe.numero:06d}"))
-    lineas.append(center("Cierre de turno/caja"))
-    lineas.append(linea('='))
-
-    # ============================================================
-    # DATOS DEL TURNO
-    # ============================================================
-    lineas.append(f"Turno: #{informe.turno.id}")
-    suc = informe.turno.sucursal.nombre if informe.turno.sucursal else "-"
-    lineas.append(f"Sucursal: {suc}")
-
-    vendedor = informe.turno.vendedor
-    if vendedor:
-        nombre_vend = vendedor.get_full_name() or vendedor.username
-        lineas.append(f"Cajero: {nombre_vend}")
-
-    lineas.append(f"Apertura: {informe.turno.fecha_apertura.strftime('%d/%m/%Y %H:%M')} hs")
-
-    if informe.turno.fecha_cierre:
-        lineas.append(f"Cierre: {informe.turno.fecha_cierre.strftime('%d/%m/%Y %H:%M')} hs")
-
-    if informe.fecha_emision:
-        lineas.append(f"Emitido: {informe.fecha_emision.strftime('%d/%m/%Y %H:%M')} hs")
-
-    if informe.emitido_por:
-        nombre_em = informe.emitido_por.get_full_name() or informe.emitido_por.username
-        lineas.append(f"Emitio: {nombre_em}")
-
-    lineas.append(linea())
-
-    # ============================================================
-    # TOTALES POR MEDIO DE PAGO
-    # ============================================================
-    lineas.append("TOTALES POR MEDIO DE PAGO")
-    lineas.append(dos_columnas("Efectivo:", f"${informe.total_efectivo:.2f}"))
-    lineas.append(dos_columnas("Debito:", f"${informe.total_debito:.2f}"))
-    lineas.append(dos_columnas("Credito:", f"${informe.total_credito:.2f}"))
-    lineas.append(dos_columnas("Transferencia:", f"${informe.total_transferencia:.2f}"))
-    lineas.append(linea())
-
-    lineas.append(dos_columnas("TOTAL GENERAL:", f"${informe.total_general:.2f}"))
-    lineas.append(f"Operaciones: {informe.cantidad_operaciones}")
-    lineas.append(linea())
-
-    # ============================================================
-    # ARQUEO
-    # ============================================================
-    lineas.append("ARQUEO DE CAJA")
-    lineas.append(dos_columnas("Fondo inicial:", f"${informe.monto_inicial:.2f}"))
-    lineas.append(dos_columnas("Efectivo esperado:", f"${informe.efectivo_esperado:.2f}"))
-    lineas.append(dos_columnas("Efectivo contado:", f"${informe.efectivo_contado:.2f}"))
-    lineas.append(linea())
-    lineas.append(dos_columnas("DIFERENCIA:", f"${informe.diferencia:.2f}"))
-    lineas.append(linea('='))
-
-    # ============================================================
-    # OBSERVACIONES
-    # ============================================================
-    if informe.observaciones:
-        lineas.append("Observaciones:")
-        obs = str(informe.observaciones)
-        for i in range(0, len(obs), ancho):
-            lineas.append(obs[i:i + ancho])
-        lineas.append(linea())
-
-    # ============================================================
-    # PIE
-    # ============================================================
-    lineas.append(center("Cierre Z definitivo."))
-    lineas.append(center("Este turno ha sido cerrado."))
-    lineas.append(center("No se puede reabrir."))
-    lineas.append(linea())
-    lineas.append(center("--- FIN DEL CIERRE Z ---"))
-
-    return "\n".join(lineas)
-
-
 # ============================================================
 # TICKET DE VENTA - TEXTO PLANO PARA ESC/POS
 # ============================================================
@@ -878,7 +844,6 @@ def generar_ticket_texto(venta, config, ancho=48):
     Sin HTML, sin CSS. Solo texto con saltos de línea.
     """
     def center(texto, ancho):
-        """Centra el texto en el ancho dado."""
         texto = str(texto)[:ancho]
         return texto.center(ancho)
 
@@ -886,7 +851,6 @@ def generar_ticket_texto(venta, config, ancho=48):
         return char * ancho
 
     def dos_columnas(izq, der, ancho):
-        """Alinea izquierda y derecha."""
         izq = str(izq)
         der = str(der)
         espacio = ancho - len(izq) - len(der)
@@ -978,10 +942,8 @@ def generar_ticket_texto(venta, config, ancho=48):
     lineas.append(center("Gracias por su compra!", ancho))
 
     # ============================================================
-    # 🔽 ESPACIO EN BLANCO ANTES DEL CORTE
+    # ESPACIO EN BLANCO ANTES DEL CORTE
     # ============================================================
-    # 8 líneas ≈ 3.5-4 cm de papel extra antes del corte.
-    # Ajustá la cantidad (6 a 10) según cuánto espacio quieras.
     lineas.append("")
     lineas.append("")
     lineas.append("")
@@ -990,6 +952,151 @@ def generar_ticket_texto(venta, config, ancho=48):
     lineas.append("")
     lineas.append("")
     lineas.append("")
+
+    return "\n".join(lineas)
+
+# ============================================================
+# INFORME Z - TEXTO PLANO PARA ESC/POS
+# ============================================================
+def generar_informe_z_texto(informe, config, ancho=48):
+    """
+    Genera el texto plano del Informe Z para ESC/POS (80mm, 48 caracteres).
+    """
+    def center(texto):
+        return str(texto)[:ancho].center(ancho)
+
+    def linea(char='-'):
+        return char * ancho
+
+    def dos_columnas(izq, der):
+        izq = str(izq)
+        der = str(der)
+        espacio = ancho - len(izq) - len(der)
+        if espacio < 1:
+            return izq + ' ' + der
+        return izq + ' ' * espacio + der
+
+    # 🔽 PRIMERO: inicializar la lista
+    lineas = []
+
+    # ============================================================
+    # ENCABEZADO
+    # ============================================================
+    nombre = config.nombre_fantasia or config.razon_social or "MI COMERCIO"
+    lineas.append(center(nombre.upper()))
+    lineas.append(center(f"CUIT: {config.cuit or '-'}"))
+    if config.direccion:
+        lineas.append(center(config.direccion))
+    lineas.append(linea('='))
+
+    # ============================================================
+    # TÍTULO
+    # ============================================================
+    lineas.append(center("*** CIERRE Z ***"))
+    lineas.append(center(f"Nro {informe.numero:06d}"))
+    lineas.append(center("Cierre de turno/caja"))
+    lineas.append(linea('='))
+
+    # ============================================================
+    # DATOS DEL TURNO
+    # ============================================================
+    lineas.append(f"Turno: #{informe.turno.id}")
+    suc = informe.turno.sucursal.nombre if informe.turno.sucursal else "-"
+    lineas.append(f"Sucursal: {suc}")
+
+    vendedor = informe.turno.vendedor
+    if vendedor:
+        nombre_vend = vendedor.get_full_name() or vendedor.username
+        lineas.append(f"Cajero: {nombre_vend}")
+
+    lineas.append(f"Apertura: {informe.turno.fecha_apertura.strftime('%d/%m/%Y %H:%M')} hs")
+
+    if informe.turno.fecha_cierre:
+        lineas.append(f"Cierre: {informe.turno.fecha_cierre.strftime('%d/%m/%Y %H:%M')} hs")
+
+    if informe.fecha_emision:
+        lineas.append(f"Emitido: {informe.fecha_emision.strftime('%d/%m/%Y %H:%M')} hs")
+
+    if informe.emitido_por:
+        nombre_em = informe.emitido_por.get_full_name() or informe.emitido_por.username
+        lineas.append(f"Emitio: {nombre_em}")
+
+    lineas.append(linea())
+
+    # ============================================================
+    # TOTALES POR MEDIO DE PAGO
+    # ============================================================
+    lineas.append("TOTALES POR MEDIO DE PAGO")
+    lineas.append(dos_columnas("Efectivo:", f"${informe.total_efectivo:.2f}"))
+    lineas.append(dos_columnas("Debito:", f"${informe.total_debito:.2f}"))
+    lineas.append(dos_columnas("Credito:", f"${informe.total_credito:.2f}"))
+    lineas.append(dos_columnas("Transferencia:", f"${informe.total_transferencia:.2f}"))
+    lineas.append(linea())
+
+    lineas.append(dos_columnas("TOTAL GENERAL:", f"${informe.total_general:.2f}"))
+    lineas.append(f"Operaciones: {informe.cantidad_operaciones}")
+    lineas.append(linea())
+
+    # ============================================================
+    # ARQUEO
+    # ============================================================
+    lineas.append("ARQUEO DE CAJA")
+    lineas.append(dos_columnas("Fondo inicial:", f"${informe.monto_inicial:.2f}"))
+    lineas.append(dos_columnas("Efectivo esperado:", f"${informe.efectivo_esperado:.2f}"))
+    lineas.append(dos_columnas("Efectivo contado:", f"${informe.efectivo_contado:.2f}"))
+    lineas.append(linea())
+    lineas.append(dos_columnas("DIFERENCIA:", f"${informe.diferencia:.2f}"))
+    lineas.append(linea('='))
+
+    # ============================================================
+    # PENDIENTE DE COBRO (pasa al próximo turno)
+    # 🔽 FIX: solo cuenta los que siguen con cobro PENDIENTE o PARCIAL
+    # ============================================================
+    remitos_pendientes = Venta.objects.filter(
+        turno=informe.turno,
+        estado__in=['PENDIENTE_ENTREGA', 'ENTREGADO'],
+        estado_cobro__in=['PENDIENTE', 'PARCIAL'],   # 🔽 AGREGADO
+        es_nota_credito=False,
+    ).exclude(estado='CANCELADO')
+
+    if remitos_pendientes.exists():
+        cantidad = remitos_pendientes.count()
+        total = remitos_pendientes.aggregate(t=Sum('total'))['t'] or 0
+
+        lineas.append(linea('='))
+        lineas.append(center("** PENDIENTE DE COBRO **"))
+        lineas.append(center("(Pasa al proximo turno)"))
+        lineas.append(linea())
+
+        for r in remitos_pendientes:
+            cliente = r.cliente.nombre if r.cliente else "Consumidor Final"
+            repartidor = r.repartidor.username if r.repartidor else "Sin asignar"
+            lineas.append(f"#{r.id} {cliente[:20]}")
+            lineas.append(f"   Repartidor: {repartidor}")
+            lineas.append(f"   Total: ${r.total:.2f}")
+            lineas.append("")
+
+        lineas.append(dos_columnas(f"TOTAL PENDIENTE ({cantidad}):", f"${total:.2f}"))
+        lineas.append(linea('='))
+
+    # ============================================================
+    # OBSERVACIONES
+    # ============================================================
+    if informe.observaciones:
+        lineas.append("Observaciones:")
+        obs = str(informe.observaciones)
+        for i in range(0, len(obs), ancho):
+            lineas.append(obs[i:i + ancho])
+        lineas.append(linea())
+
+    # ============================================================
+    # PIE
+    # ============================================================
+    lineas.append(center("Cierre Z definitivo."))
+    lineas.append(center("Este turno ha sido cerrado."))
+    lineas.append(center("No se puede reabrir."))
+    lineas.append(linea())
+    lineas.append(center("--- FIN DEL CIERRE Z ---"))
 
     return "\n".join(lineas)
 
@@ -1342,13 +1449,38 @@ def pos_view(request):
     config = EmpresaConfig.objects.first()
     condicion_iva_emisor = config.condicion_iva if config else 'MO'
 
+    # ============================================================
+    # Remitos pendientes de cobro en este turno
+    # (los que quedaron sin rendir del turno anterior + los del actual)
+    # ============================================================
+    remitos_pendientes = Venta.objects.filter(
+        turno=turno_activo,
+        estado__in=['PENDIENTE_ENTREGA', 'ENTREGADO'],
+        estado_cobro__in=['PENDIENTE', 'PARCIAL'],
+        es_nota_credito=False,
+        es_remito=True,
+    ).exclude(estado='CANCELADO').select_related('cliente', 'repartidor')
+
+    cantidad_pendientes = remitos_pendientes.count()
+    total_pendientes = remitos_pendientes.aggregate(t=Sum('total'))['t'] or Decimal('0.00')
+
+    # Separar los que son "heredados" (de turnos anteriores) de los del turno actual
+    remitos_heredados = remitos_pendientes.exclude(turno=turno_activo)
+    cantidad_heredados = remitos_heredados.count()
+    total_heredados = remitos_heredados.aggregate(t=Sum('total'))['t'] or Decimal('0.00')
+
     context = {
         'clientes': clientes,
         'repartidores': repartidores,
         'vendedores': vendedores,
         'turno_activo': turno_activo,
-        'sucursal_actual': turno_activo.sucursal,   # 🔽 NUEVO
+        'sucursal_actual': turno_activo.sucursal,
         'condicion_iva_emisor': condicion_iva_emisor,
+        'cantidad_remitos_pendientes': cantidad_pendientes,
+        'total_remitos_pendientes': total_pendientes,
+        'cantidad_remitos_heredados': cantidad_heredados,
+        'total_remitos_heredados': total_heredados,
+        'remitos_pendientes': remitos_pendientes[:10],
     }
     return render(request, 'ventas/pos.html', context)
 
@@ -2233,33 +2365,6 @@ def editar_repartidor_view(request, repartidor_id):
     }
     return render(request, 'ventas/editar_repartidor.html', context)
 
-@login_required
-@solo_no_repartidor
-@csrf_exempt
-def marcar_entregado_admin_ajax(request, venta_id):
-    """Permite a admin/supervisor marcar cualquier remito como ENTREGADO."""
-    if request.method != 'POST':
-        return JsonResponse({'status': 'error', 'message': 'Método no permitido.'}, status=405)
-
-    try:
-        venta = Venta.objects.get(id=venta_id)
-
-        if venta.estado == 'ENTREGADO':
-            return JsonResponse({'status': 'error', 'message': 'Ya estaba entregado.'})
-        if venta.estado == 'CANCELADO':
-            return JsonResponse({'status': 'error', 'message': 'No se puede marcar un comprobante cancelado.'})
-
-        venta.estado = 'ENTREGADO'
-        venta.fecha_entrega = timezone.now()
-        venta.save()
-
-        logger.info(f"Venta #{venta.id} marcada como ENTREGADO por {request.user.username}")
-        return JsonResponse({'status': 'success', 'message': 'Marcado como entregado.'})
-    except Venta.DoesNotExist:
-        return JsonResponse({'status': 'error', 'message': 'Comprobante no encontrado.'}, status=404)
-    except Exception as e:
-        logger.exception(f"Error marcando entregado venta {venta_id}")
-        return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
 
 @login_required
 @solo_no_repartidor
@@ -2710,17 +2815,44 @@ def lista_informes_view(request):
 @login_required
 @solo_no_repartidor
 def cerrar_caja(request):
-    """Pantalla de Arqueo y Relevo para el cajero saliente. Emite Z al cerrar."""
+    """Pantalla de Arqueo y Relevo. Emite Z al cerrar. Advierte si hay remitos sin rendir."""
     turno_activo = CajaTurno.objects.filter(
         vendedor=request.user, estado='ABIERTA'
     ).select_related('sucursal').first()
 
+    # 🔽 Detectar si es AJAX ANTES de cualquier redirect
+    es_ajax = (
+        request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+        or request.content_type == 'application/json'
+        or request.headers.get('Accept', '').startswith('application/json')
+    )
+
     if not turno_activo:
+        if es_ajax:
+            return JsonResponse({
+                'status': 'error',
+                'message': 'No tenés una caja abierta. Ya fue cerrada o nunca la abriste.',
+            }, status=400)
         return redirect('ventas:abrir_caja')
 
     ventas_turno = Venta.objects.filter(
         turno=turno_activo, es_nota_credito=False
     ).exclude(estado='CANCELADO')
+
+    # ============================================================
+    # REMITOS SIN RENDIR (pasan al próximo turno)
+    # 🔽 NUEVO: solo los que siguen con cobro PENDIENTE o PARCIAL.
+    #    Los que ya se cobraron / rindieron ya no cuentan.
+    # ============================================================
+    remitos_sin_rendir = Venta.objects.filter(
+        turno=turno_activo,
+        estado__in=['PENDIENTE_ENTREGA', 'ENTREGADO'],
+        estado_cobro__in=['PENDIENTE', 'PARCIAL'],   # 🔽 ESTE ES EL FIX
+        es_nota_credito=False,
+    ).exclude(estado='CANCELADO')
+
+    cantidad_remitos_sin_rendir = remitos_sin_rendir.count()
+    total_pendiente = remitos_sin_rendir.aggregate(t=Sum('total'))['t'] or 0
 
     total_efectivo = ventas_turno.filter(metodo_pago='EFECTIVO').aggregate(total=Sum('total'))['total'] or 0.0
     total_debito = ventas_turno.filter(metodo_pago='TARJETA_DEBITO').aggregate(total=Sum('total'))['total'] or 0.0
@@ -2743,9 +2875,7 @@ def cerrar_caja(request):
         turno_activo.estado = 'CERRADA'
         turno_activo.save()
 
-        # =========================================================
-        # EMITIR INFORME Z (numeración por sucursal)
-        # =========================================================
+        # Emitir Informe Z
         ultimo_z = InformeCaja.objects.filter(
             tipo='Z',
             turno__sucursal=turno_activo.sucursal,
@@ -2770,10 +2900,20 @@ def cerrar_caja(request):
             observaciones=observaciones,
         )
 
+        if cantidad_remitos_sin_rendir > 0:
+            logger.info(
+                f'Cierre Z #{numero_z}: {cantidad_remitos_sin_rendir} remitos sin rendir '
+                f'por ${total_pendiente:.2f} pasan al próximo turno'
+            )
+
         registrar_log(
             request,
             accion='CAJA_CERRAR',
-            descripcion=f'Cierre Z #{numero_z} - Turno #{turno_activo.id} - Total ${total_general} - Diferencia ${diferencia}',
+            descripcion=(
+                f'Cierre Z #{numero_z} - Turno #{turno_activo.id} - '
+                f'Total ${total_general} - Diferencia ${diferencia} - '
+                f'Remitos pendientes: {cantidad_remitos_sin_rendir} (${total_pendiente})'
+            ),
             modelo='InformeCaja',
             objeto_id=informe_z.id,
             datos_despues={
@@ -2782,24 +2922,33 @@ def cerrar_caja(request):
                 'efectivo_contado': efectivo_contado,
                 'efectivo_esperado': efectivo_esperado,
                 'diferencia': diferencia,
+                'remitos_pendientes': cantidad_remitos_sin_rendir,
+                'total_pendiente': float(total_pendiente),
             },
         )
 
-        # =========================================================
-        # 🔽 AJAX: devolver TEXTO PLANO del Z para imprimir directo
-        # =========================================================
-        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-            from apps.configuracion.models import EmpresaConfig
-            config = EmpresaConfig.objects.first()
-            informe_texto = generar_informe_z_texto(informe_z, config)
+        # 🔽 Respuesta AJAX: la caja YA está cerrada, solo falta generar el ticket
+        if es_ajax:
+            try:
+                config = EmpresaConfig.objects.first()
+                informe_texto = generar_informe_z_texto(informe_z, config)
+                return JsonResponse({
+                    'status': 'success',
+                    'informe_id': informe_z.id,
+                    'informe_texto': informe_texto,
+                    'cantidad_remitos_sin_rendir': cantidad_remitos_sin_rendir,
+                    'total_pendiente': float(total_pendiente),
+                })
+            except Exception as e:
+                logger.exception(f"Error generando Informe Z texto: {e}")
+                return JsonResponse({
+                    'status': 'error',
+                    'message': f'La caja se cerró pero falló la impresión del ticket: {str(e)}',
+                    'informe_id': informe_z.id,
+                    'cantidad_remitos_sin_rendir': cantidad_remitos_sin_rendir,
+                    'total_pendiente': float(total_pendiente),
+                }, status=500)
 
-            return JsonResponse({
-                'status': 'success',
-                'informe_id': informe_z.id,
-                'informe_texto': informe_texto,
-            })
-
-        # Si es un submit normal (sin JS), redirigir como antes
         return redirect('ventas:imprimir_informe', informe_id=informe_z.id)
 
     context = {
@@ -2811,6 +2960,9 @@ def cerrar_caja(request):
         'total_general': total_general,
         'efectivo_esperado': efectivo_esperado,
         'cantidad_operaciones': ventas_turno.count(),
+        'cantidad_remitos_sin_rendir': cantidad_remitos_sin_rendir,
+        'total_pendiente': total_pendiente,
+        'remitos_sin_rendir': remitos_sin_rendir,
     }
     return render(request, 'ventas/cerrar_caja.html', context)
 
@@ -2831,3 +2983,540 @@ def ticket_texto_ajax(request, venta_id):
         'ticket_texto': ticket_texto,
         'venta_id': venta.id,
     })
+
+@login_required
+@solo_no_repartidor
+@csrf_exempt
+@transaction.atomic
+def facturar_venta_existente(request, venta_id):
+    """
+    Toma una venta emitida como ticket no fiscal (tipo_comprobante=0)
+    y le solicita el CAE a ARCA/AFIP.
+
+    Reutiliza EXACTAMENTE la misma lógica de AFIP que procesar_venta_ajax.
+    """
+    if request.method != 'POST':
+        return JsonResponse({'status': 'error', 'message': 'Método no permitido.'}, status=405)
+
+    try:
+        venta = Venta.objects.select_for_update().get(pk=venta_id)
+    except Venta.DoesNotExist:
+        return JsonResponse({'status': 'error', 'message': 'Venta no encontrada.'}, status=404)
+
+    # ============================================================
+    # VALIDACIONES
+    # ============================================================
+    if venta.cae:
+        return JsonResponse({
+            'status': 'error',
+            'message': 'Esta venta ya tiene CAE emitido. No se puede facturar dos veces.'
+        }, status=400)
+
+    if venta.es_remito:
+        return JsonResponse({
+            'status': 'error',
+            'message': 'Esta venta es un remito. Usá el flujo de "Facturar Remitos Pendientes".'
+        }, status=400)
+
+    if venta.es_nota_credito:
+        return JsonResponse({
+            'status': 'error',
+            'message': 'No se puede facturar una Nota de Crédito.'
+        }, status=400)
+
+    if venta.estado == 'PRESUPUESTO':
+        return JsonResponse({
+            'status': 'error',
+            'message': 'Esta venta es un Presupuesto, no un ticket. No se puede facturar directamente.'
+        }, status=400)
+
+    if venta.tipo_comprobante != 0:
+        return JsonResponse({
+            'status': 'error',
+            'message': f'Esta venta ya tiene tipo de comprobante asignado ({venta.get_tipo_comprobante_display()}).'
+        }, status=400)
+
+    # ============================================================
+    # DETERMINAR TIPO DE COMPROBANTE SEGÚN CLIENTE
+    # ============================================================
+    # Si el cliente es Responsable Inscripto (condicion_iva=1) → Factura A
+    # Caso contrario → Factura B
+    tipo_comprobante_final = 6  # Factura B por defecto
+    if venta.cliente and venta.cliente.condicion_iva == '1':
+        tipo_comprobante_final = 1  # Factura A
+
+    # ============================================================
+    # VALIDAR CONFIGURACIÓN DE EMPRESA
+    # ============================================================
+    config = EmpresaConfig.objects.first()
+
+    if not (config and config.certificado_crt and config.clave_privada_key and config.cuit):
+        return JsonResponse({
+            'status': 'error',
+            'message': 'La configuración de ARCA/AFIP está incompleta. Verificá los certificados y el CUIT.'
+        }, status=400)
+
+    # ============================================================
+    # CONEXIÓN A ARCA/AFIP (misma lógica que procesar_venta_ajax)
+    # ============================================================
+    try:
+        from pyafipws.wsaa import WSAA
+        from pyafipws.wsfev1 import WSFEv1
+
+        cert_path = config.certificado_crt.path
+        key_path = config.clave_privada_key.path
+        cuit = config.cuit.replace("-", "").strip()
+
+        if config.ambiente_arca == 'PROD':
+            wsdl_wsaa = "https://wsaa.afip.gov.ar/ws/services/LoginCms"
+            wsdl_wsfe = "https://servicios1.afip.gov.ar/wsfev1/service.asmx?WSDL"
+        else:
+            wsdl_wsaa = "https://wsaahomo.afip.gov.ar/ws/services/LoginCms"
+            wsdl_wsfe = "https://wswhomo.afip.gov.ar/wsfev1/service.asmx?WSDL"
+
+        wsaa = WSAA()
+        ta = wsaa.Autenticar("wsfe", cert_path, key_path, wsdl=wsdl_wsaa)
+
+        wsfev1 = WSFEv1()
+        wsfev1.Cuit = cuit
+        wsfev1.SetTicketAcceso(ta)
+
+        CACHE_DIR = os.path.join(settings.BASE_DIR, 'afip_cache')
+        os.makedirs(CACHE_DIR, exist_ok=True)
+
+        wsfev1.Conectar(wsdl=wsdl_wsfe, cache=CACHE_DIR)
+
+        pto_vta = int(config.punto_de_venta or 1)
+        cbte_nro = int(wsfev1.CompUltimoAutorizado(tipo_comprobante_final, pto_vta) or 0) + 1
+
+        # Datos del cliente para el comprobante
+        doc_tipo = 99
+        doc_nro = 0
+
+        if venta.cliente and venta.cliente.numero_documento:
+            doc_nro = venta.cliente.numero_documento.replace("-", "").strip()
+            if len(doc_nro) == 11:
+                doc_tipo = 80
+            elif len(doc_nro) == 8:
+                doc_tipo = 96
+            else:
+                doc_tipo = 99
+
+        fecha_cbte = timezone.now().strftime("%Y%m%d")
+
+        cond_iva_receptor = 5
+        if venta.cliente and hasattr(venta.cliente, 'condicion_iva') and venta.cliente.condicion_iva:
+            try:
+                cond_iva_receptor = int(venta.cliente.condicion_iva)
+            except (ValueError, TypeError):
+                cond_iva_receptor = 5
+
+        total_venta = venta.total
+
+        # Cálculo de IVA según tipo
+        if tipo_comprobante_final == 11:
+            imp_neto = total_venta
+            imp_iva = Decimal('0.00')
+        else:
+            imp_neto = (total_venta / Decimal("1.21")).quantize(
+                Decimal("0.01"), rounding=ROUND_HALF_UP
+            )
+            imp_iva = (total_venta - imp_neto).quantize(
+                Decimal("0.01"), rounding=ROUND_HALF_UP
+            )
+
+        wsfev1.CrearFactura(
+            concepto=1,
+            tipo_doc=doc_tipo,
+            nro_doc=doc_nro,
+            tipo_cbte=tipo_comprobante_final,
+            punto_vta=pto_vta,
+            cbt_desde=cbte_nro,
+            cbt_hasta=cbte_nro,
+            imp_total=float(total_venta),
+            imp_tot_conc=0.0,
+            imp_neto=float(imp_neto),
+            imp_iva=float(imp_iva),
+            imp_trib=0.0,
+            imp_op_ex=0.0,
+            fecha_cbte=fecha_cbte,
+        )
+
+        try:
+            wsfev1.EstablecerCampoFactura("condicion_iva_receptor_id", str(cond_iva_receptor))
+            wsfev1.EstablecerCampoFactura("cancela_misma_moneda_ext", "N")
+        except Exception as e:
+            logger.warning(f"No se pudo establecer condicion_iva_receptor_id: {e}")
+
+        if tipo_comprobante_final != 11:
+            wsfev1.AgregarIva(5, float(imp_neto), float(imp_iva))
+
+        wsfev1.CAESolicitar()
+
+        cae_obtenido = getattr(wsfev1, "CAE", None)
+        vencimiento_obtenido = getattr(wsfev1, "Vencimiento", None)
+
+        if not cae_obtenido:
+            resultado = getattr(wsfev1, "Resultado", "Desconocido")
+            obs = getattr(wsfev1, "Obs", "Sin observaciones")
+            logger.error(f"Respuesta ARCA sin CAE. Resultado: {resultado}, Obs: {obs}")
+            return JsonResponse({
+                'status': 'error',
+                'message': f'ARCA rechazó la solicitud. Resultado: {resultado}. Obs: {obs}'
+            }, status=500)
+
+        # ============================================================
+        # ACTUALIZAR LA VENTA CON LOS DATOS DEL CAE
+        # ============================================================
+        venta.cae = str(cae_obtenido)
+        if vencimiento_obtenido:
+            try:
+                venta.vencimiento_cae = datetime.strptime(str(vencimiento_obtenido), "%Y%m%d").date()
+            except ValueError:
+                logger.warning(f"No se pudo parsear la fecha de vencimiento: {vencimiento_obtenido}")
+        venta.numero_comprobante = cbte_nro
+        venta.tipo_comprobante = tipo_comprobante_final
+        venta.save()
+
+        logger.info(f"CAE Autorizado para Venta #{venta.id} (facturación diferida): {cae_obtenido}")
+
+        # Auditoría
+        registrar_log(
+            request,
+            accion='VENTA_FACTURAR',
+            descripcion=f'Venta #{venta.id} facturada retroactivamente - CAE {cae_obtenido} - Tipo {tipo_comprobante_final}',
+            modelo='Venta',
+            objeto_id=venta.id,
+            datos_despues={
+                'cae': str(cae_obtenido),
+                'numero_comprobante': cbte_nro,
+                'tipo_comprobante': tipo_comprobante_final,
+            },
+        )
+
+        return JsonResponse({
+            'status': 'success',
+            'message': 'Factura emitida correctamente.',
+            'venta_id': venta.id,
+            'cae': str(cae_obtenido),
+            'numero_comprobante': cbte_nro,
+            'tipo_comprobante': tipo_comprobante_final,
+            'tipo_comprobante_display': venta.get_tipo_comprobante_display(),
+        })
+
+    except Exception as afip_err:
+        logger.exception(f"Excepción al facturar venta {venta_id}: {afip_err}")
+        return JsonResponse({
+            'status': 'error',
+            'message': f'Error al conectar con ARCA/AFIP: {str(afip_err)}'
+        }, status=500)
+
+@login_required
+@solo_no_repartidor
+def rendir_venta(request, venta_id):
+    """
+    Marca una venta como RENDIDA (el repartidor volvió con la plata y el stock).
+    REQUIERE caja abierta.
+    """
+    if request.method != 'POST':
+        return JsonResponse({'status': 'error', 'message': 'Método no permitido.'}, status=405)
+
+    if not (request.user.is_superuser or request.user.rol in ['gerente', 'cajero']):
+        return JsonResponse({
+            'status': 'error',
+            'message': 'No tenés permisos para rendir ventas.'
+        }, status=403)
+
+    # 🔽 NUEVO: Validar que haya caja abierta
+    turno_activo = CajaTurno.objects.filter(
+        vendedor=request.user,
+        estado='ABIERTA',
+    ).first()
+
+    if not turno_activo:
+        return JsonResponse({
+            'status': 'error',
+            'message': '⚠️ Necesitás tener la CAJA ABIERTA para rendir. Abrí tu caja primero.'
+        }, status=400)
+
+    try:
+        venta = Venta.objects.select_for_update().get(pk=venta_id)
+    except Venta.DoesNotExist:
+        return JsonResponse({'status': 'error', 'message': 'Venta no encontrada.'}, status=404)
+
+    if venta.estado not in ('PENDIENTE_ENTREGA', 'ENTREGADO'):
+        return JsonResponse({
+            'status': 'error',
+            'message': f'Esta venta está en estado "{venta.get_estado_display()}" y no se puede rendir.'
+        }, status=400)
+
+    # Actualizar estado
+    estado_anterior = venta.estado
+    venta.estado = 'COMPLETADO'
+    venta.estado_cobro = 'COBRADO'
+    venta.saldo_pendiente = Decimal('0.00')
+    venta.save()
+
+    # Auditoría
+    registrar_log(
+        request,
+        accion='VENTA_RENDIR',
+        descripcion=f'Venta #{venta.id} rendida por {request.user.username} en Turno #{turno_activo.id}',
+        modelo='Venta',
+        objeto_id=venta.id,
+        datos_despues={
+            'estado_anterior': estado_anterior,
+            'estado_nuevo': venta.estado,
+            'estado_cobro': venta.estado_cobro,
+            'turno': turno_activo.id,
+        },
+    )
+
+    return JsonResponse({
+        'status': 'success',
+        'message': 'Venta rendida correctamente.',
+        'venta_id': venta.id,
+        'estado': venta.estado,
+    })
+
+@login_required
+@solo_no_repartidor
+def repartidor_pendientes_view(request, repartidor_id):
+    """
+    Muestra las ventas que el repartidor tiene sin rendir.
+    Acepta el ID del PerfilRepartidor (que es el que usa el template).
+    """
+    from django.db.models import Sum
+    from decimal import Decimal
+
+    # 🔽 Buscar por PerfilRepartidor, no por Usuario
+    perfil = get_object_or_404(PerfilRepartidor, id=repartidor_id)
+    repartidor = perfil.user
+
+    ventas_pendientes = Venta.objects.filter(
+        repartidor=repartidor,
+        estado__in=['PENDIENTE_ENTREGA', 'ENTREGADO'],
+        es_nota_credito=False,
+    ).exclude(estado_cobro='COBRADO').order_by('-fecha')
+
+    total_a_rendir = ventas_pendientes.aggregate(
+        t=Sum('total')
+    )['t'] or Decimal('0.00')
+
+    cantidad_en_calle = ventas_pendientes.filter(estado='PENDIENTE_ENTREGA').count()
+    cantidad_entregadas = ventas_pendientes.filter(estado='ENTREGADO').count()
+
+    total_efectivo = ventas_pendientes.filter(
+        metodo_pago='EFECTIVO'
+    ).aggregate(t=Sum('total'))['t'] or Decimal('0.00')
+
+    total_otros = total_a_rendir - total_efectivo
+
+    context = {
+        'perfil': perfil,
+        'repartidor': repartidor,
+        'ventas_pendientes': ventas_pendientes,
+        'cantidad': ventas_pendientes.count(),
+        'cantidad_en_calle': cantidad_en_calle,
+        'cantidad_entregadas': cantidad_entregadas,
+        'total_a_rendir': total_a_rendir,
+        'total_efectivo': total_efectivo,
+        'total_otros': total_otros,
+    }
+    return render(request, 'ventas/repartidor_pendientes.html', context)
+
+@login_required
+@solo_no_repartidor
+@transaction.atomic
+def rendir_todos_repartidor(request, repartidor_id):
+    """Marca como COMPLETADO todas las ventas pendientes de un repartidor."""
+    if request.method != 'POST':
+        return JsonResponse({'status': 'error', 'message': 'Método no permitido.'}, status=405)
+
+    if not (request.user.is_superuser or request.user.rol in ['gerente', 'cajero']):
+        return JsonResponse({
+            'status': 'error',
+            'message': 'No tenés permisos para rendir ventas.'
+        }, status=403)
+
+    # 🔽 NUEVO: Validar caja abierta
+    turno_activo = CajaTurno.objects.filter(
+        vendedor=request.user,
+        estado='ABIERTA',
+    ).first()
+
+    if not turno_activo:
+        return JsonResponse({
+            'status': 'error',
+            'message': '⚠️ Necesitás tener la CAJA ABIERTA para rendir. Abrí tu caja primero.'
+        }, status=400)
+
+    perfil = get_object_or_404(PerfilRepartidor, id=repartidor_id)
+    repartidor = perfil.user
+
+    ventas = Venta.objects.filter(
+        repartidor=repartidor,
+        estado__in=['PENDIENTE_ENTREGA', 'ENTREGADO'],
+        es_nota_credito=False,
+    ).exclude(estado_cobro='COBRADO')
+
+    cantidad = ventas.count()
+    if cantidad == 0:
+        return JsonResponse({
+            'status': 'error',
+            'message': 'No hay ventas pendientes para rendir.'
+        }, status=400)
+
+    total = ventas.aggregate(t=Sum('total'))['t'] or 0
+
+    ventas.update(
+        estado='COMPLETADO',
+        estado_cobro='COBRADO',
+        saldo_pendiente=Decimal('0.00'),
+    )
+
+    registrar_log(
+        request,
+        accion='VENTA_RENDIR_MASIVO',
+        descripcion=f'{cantidad} ventas rendidas del repartidor {repartidor.username} - Total ${total} - Turno #{turno_activo.id}',
+        modelo='Usuario',
+        objeto_id=repartidor.id,
+    )
+
+    return JsonResponse({
+        'status': 'success',
+        'message': f'{cantidad} ventas rendidas correctamente.',
+        'cantidad': cantidad,
+        'total': float(total),
+    })
+
+@login_required
+@solo_no_repartidor
+def repartidores_con_deuda_view(request):
+    """
+    Muestra un listado de TODOS los repartidores que tienen
+    ventas sin rendir (en calle o entregadas sin rendir).
+    Similar a cuentas corrientes, pero para repartidores.
+    """
+    from django.db.models import Sum, Count, Max, Q, DecimalField
+    from django.db.models.functions import Coalesce
+
+    # Filtro de búsqueda
+    busqueda = request.GET.get('q', '').strip()
+
+    # Base: todos los repartidores activos
+    perfiles = PerfilRepartidor.objects.filter(activo=True).select_related('user')
+
+    if busqueda:
+        perfiles = perfiles.filter(
+            Q(user__username__icontains=busqueda) |
+            Q(user__first_name__icontains=busqueda) |
+            Q(user__last_name__icontains=busqueda) |
+            Q(zona__icontains=busqueda)
+        )
+
+    # 🔽 OJO: uso 'user__ventas_asignadas' porque ese es el related_name real
+    perfiles = perfiles.annotate(
+        # Cantidad de ventas sin rendir
+        cantidad_pendientes=Count(
+            'user__ventas_asignadas',
+            filter=Q(
+                user__ventas_asignadas__estado__in=['PENDIENTE_ENTREGA', 'ENTREGADO'],
+                user__ventas_asignadas__estado_cobro__in=['PENDIENTE', 'PARCIAL'],
+                user__ventas_asignadas__es_nota_credito=False,
+            ),
+            distinct=True
+        ),
+        # Total a rendir
+        total_pendiente=Coalesce(
+            Sum(
+                'user__ventas_asignadas__total',
+                filter=Q(
+                    user__ventas_asignadas__estado__in=['PENDIENTE_ENTREGA', 'ENTREGADO'],
+                    user__ventas_asignadas__estado_cobro__in=['PENDIENTE', 'PARCIAL'],
+                    user__ventas_asignadas__es_nota_credito=False,
+                )
+            ),
+            Decimal('0.00'),
+            output_field=DecimalField(max_digits=12, decimal_places=2)
+        ),
+        # Total en efectivo a rendir
+        total_efectivo=Coalesce(
+            Sum(
+                'user__ventas_asignadas__total',
+                filter=Q(
+                    user__ventas_asignadas__estado__in=['PENDIENTE_ENTREGA', 'ENTREGADO'],
+                    user__ventas_asignadas__estado_cobro__in=['PENDIENTE', 'PARCIAL'],
+                    user__ventas_asignadas__es_nota_credito=False,
+                    user__ventas_asignadas__metodo_pago='EFECTIVO',
+                )
+            ),
+            Decimal('0.00'),
+            output_field=DecimalField(max_digits=12, decimal_places=2)
+        ),
+        # En calle
+        cantidad_en_calle=Count(
+            'user__ventas_asignadas',
+            filter=Q(
+                user__ventas_asignadas__estado='PENDIENTE_ENTREGA',
+                user__ventas_asignadas__estado_cobro__in=['PENDIENTE', 'PARCIAL'],
+                user__ventas_asignadas__es_nota_credito=False,
+            ),
+            distinct=True
+        ),
+        # Entregadas sin rendir
+        cantidad_entregadas=Count(
+            'user__ventas_asignadas',
+            filter=Q(
+                user__ventas_asignadas__estado='ENTREGADO',
+                user__ventas_asignadas__estado_cobro__in=['PENDIENTE', 'PARCIAL'],
+                user__ventas_asignadas__es_nota_credito=False,
+            ),
+            distinct=True
+        ),
+        # Última entrega
+        ultima_entrega=Max(
+            'user__ventas_asignadas__fecha',
+            filter=Q(
+                user__ventas_asignadas__estado__in=['PENDIENTE_ENTREGA', 'ENTREGADO'],
+                user__ventas_asignadas__estado_cobro__in=['PENDIENTE', 'PARCIAL'],
+            )
+        ),
+    )
+
+    # Solo mostrar los que tienen algo pendiente
+    solo_con_deuda = request.GET.get('con_deuda', '1') == '1'
+    if solo_con_deuda:
+        perfiles = perfiles.filter(cantidad_pendientes__gt=0)
+
+    # Ordenar por total pendiente descendente
+    perfiles = perfiles.order_by('-total_pendiente', 'user__first_name')
+
+    # KPIs globales
+    todos_con_deuda = PerfilRepartidor.objects.filter(activo=True).annotate(
+        cant=Count(
+            'user__ventas_asignadas',
+            filter=Q(
+                user__ventas_asignadas__estado__in=['PENDIENTE_ENTREGA', 'ENTREGADO'],
+                user__ventas_asignadas__estado_cobro__in=['PENDIENTE', 'PARCIAL'],
+                user__ventas_asignadas__es_nota_credito=False,
+            ),
+            distinct=True
+        )
+    ).filter(cant__gt=0)
+
+    total_general = Venta.objects.filter(
+        estado__in=['PENDIENTE_ENTREGA', 'ENTREGADO'],
+        estado_cobro__in=['PENDIENTE', 'PARCIAL'],
+        es_nota_credito=False,
+        repartidor__isnull=False,
+    ).aggregate(t=Sum('total'))['t'] or Decimal('0.00')
+
+    context = {
+        'repartidores': perfiles,
+        'total_general': total_general,
+        'cantidad_con_deuda': todos_con_deuda.count(),
+        'busqueda': busqueda,
+        'solo_con_deuda': solo_con_deuda,
+    }
+    return render(request, 'ventas/repartidores_con_deuda.html', context)

@@ -1,7 +1,7 @@
 """
 Servicio local de impresión para el POS.
-Imprime en impresora térmica POS80 conectada por USB (puerto USB003).
-Usa el spooler de Windows vía pywin32.
+Permite configurar qué impresora usar para tickets y remitos desde /config.
+Se levanta como servicio de Windows con NSSM.
 """
 import os
 import re
@@ -13,29 +13,24 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template_string
 from flask_cors import CORS
 
 # ============================================================
 # CONFIGURACIÓN
 # ============================================================
 
-# Puerto del servicio web (solo local)
 PUERTO = 8085
 
-# Nombre exacto de la impresora en Windows (el campo "Name" de Get-Printer)
+# 🔽 NUEVO: archivo de config persistente (impresoras elegidas)
+CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'print_config.json')
+
+# Impresora por defecto (fallback si no hay nada configurado)
 IMPRESORA_DEFAULT = os.environ.get('POS_PRINTER', 'POS80')
 
-# 🔽 NUEVO: Cantidad de líneas a avanzar antes de cortar el papel.
-# Se puede ajustar sin tocar código con la variable de entorno POS_FEED_LINEAS.
-#   4  → ~2 cm
-#   6  → ~3 cm
-#   8  → ~4 cm  ← recomendado (estándar comercial)
-#   10 → ~5 cm
-#   12 → ~6 cm
+# 🔽 NUEVO: cantidad de líneas a avanzar antes de cortar
 FEED_LINEAS = int(os.environ.get('POS_FEED_LINEAS', '8'))
 
-# Sistema operativo
 SO = platform.system()
 
 # Logging
@@ -54,8 +49,39 @@ logger = logging.getLogger(__name__)
 # ============================================================
 
 app = Flask(__name__)
-
 CORS(app, origins='*')
+
+# ============================================================
+# CONFIG: cargar/guardar impresoras
+# ============================================================
+
+def cargar_config():
+    """Lee print_config.json o devuelve default."""
+    try:
+        with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {
+            'impresora_ticket': IMPRESORA_DEFAULT,
+            'impresora_remito': IMPRESORA_DEFAULT,
+        }
+
+def guardar_config(config):
+    """Guarda la config en print_config.json."""
+    with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+        json.dump(config, f, indent=2, ensure_ascii=False)
+
+def obtener_impresora_por_tipo(tipo):
+    """
+    Devuelve el nombre de la impresora según el tipo de trabajo.
+    tipo: 'ticket' | 'remito' | 'informe_z' | 'informe_x' | ...
+    """
+    config = cargar_config()
+    if tipo == 'ticket' or tipo.startswith('informe_'):
+        return config.get('impresora_ticket') or IMPRESORA_DEFAULT
+    elif tipo == 'remito' or tipo == 'factura':
+        return config.get('impresora_remito') or IMPRESORA_DEFAULT
+    return config.get('impresora_ticket') or IMPRESORA_DEFAULT
 
 # ============================================================
 # RUTAS
@@ -64,10 +90,12 @@ CORS(app, origins='*')
 @app.route('/health', methods=['GET'])
 def health():
     """Health check: verifica que el servicio está vivo."""
+    config = cargar_config()
     return jsonify({
         'status': 'ok',
         'so': SO,
-        'impresora': IMPRESORA_DEFAULT,
+        'impresora_ticket': config.get('impresora_ticket'),
+        'impresora_remito': config.get('impresora_remito'),
         'metodo': 'USB (spooler Windows)',
         'feed_lineas': FEED_LINEAS,
     })
@@ -95,9 +123,7 @@ def listar_impresoras():
 
 @app.route('/test-connection', methods=['GET'])
 def test_connection():
-    """
-    Verifica que la impresora esté instalada y disponible en Windows.
-    """
+    """Verifica que la impresora esté instalada y disponible."""
     try:
         if SO != 'Windows':
             return jsonify({
@@ -122,7 +148,7 @@ def test_connection():
         else:
             return jsonify({
                 'success': False,
-                'error': f'Impresora "{IMPRESORA_DEFAULT}" no encontrada en Windows',
+                'error': f'Impresora "{IMPRESORA_DEFAULT}" no encontrada',
                 'disponibles': printers,
             }), 404
 
@@ -136,6 +162,135 @@ def test_connection():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+# ============================================================
+# 🔽 NUEVO: UI DE CONFIGURACIÓN
+# ============================================================
+
+@app.route('/config', methods=['GET', 'POST'])
+def configurar_impresoras():
+    """UI para seleccionar impresoras de ticket y remito."""
+    config = cargar_config()
+
+    if request.method == 'POST':
+        config['impresora_ticket'] = request.form.get('impresora_ticket', '')
+        config['impresora_remito'] = request.form.get('impresora_remito', '')
+        guardar_config(config)
+        mensaje = "✅ Configuración guardada correctamente."
+    else:
+        mensaje = ""
+
+    if SO == 'Windows':
+        impresoras = listar_impresoras_windows()
+    elif SO == 'Linux':
+        impresoras = listar_impresoras_linux()
+    else:
+        impresoras = []
+
+    html = '''
+    <!DOCTYPE html>
+    <html lang="es" data-bs-theme="light">
+    <head>
+        <meta charset="UTF-8">
+        <title>Configurar Impresoras - Servicio POS</title>
+        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+        <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    </head>
+    <body class="p-4 bg-body-tertiary">
+        <div class="container" style="max-width: 700px;">
+            <div class="card shadow-lg border-0">
+                <div class="card-header bg-primary text-white py-3">
+                    <h4 class="mb-0">
+                        <i class="fas fa-print me-2"></i> Configuración de Impresoras
+                    </h4>
+                </div>
+                <div class="card-body p-4">
+
+                    {% if mensaje %}
+                    <div class="alert alert-success">
+                        <i class="fas fa-check-circle me-1"></i> {{ mensaje }}
+                    </div>
+                    {% endif %}
+
+                    <div class="alert alert-info small">
+                        <i class="fas fa-info-circle me-1"></i>
+                        Sistema operativo detectado: <strong>{{ so }}</strong><br>
+                        Impresoras encontradas: <strong>{{ impresoras|length }}</strong>
+                    </div>
+
+                    <form method="POST">
+                        <div class="mb-4">
+                            <label class="form-label fw-bold">
+                                <i class="fas fa-receipt text-primary me-1"></i>
+                                Impresora para TICKETS (80mm)
+                            </label>
+                            <select name="impresora_ticket" class="form-select form-select-lg" required>
+                                <option value="">-- Seleccionar --</option>
+                                {% for imp in impresoras %}
+                                <option value="{{ imp }}"
+                                    {% if imp == config.impresora_ticket %}selected{% endif %}>
+                                    {{ imp }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                            <small class="text-muted">
+                                Se usa para: tickets de venta, Cierre Z, Informe X.
+                            </small>
+                        </div>
+
+                        <div class="mb-4">
+                            <label class="form-label fw-bold">
+                                <i class="fas fa-file-invoice text-warning me-1"></i>
+                                Impresora para REMITOS / FACTURAS
+                            </label>
+                            <select name="impresora_remito" class="form-select form-select-lg" required>
+                                <option value="">-- Seleccionar --</option>
+                                {% for imp in impresoras %}
+                                <option value="{{ imp }}"
+                                    {% if imp == config.impresora_remito %}selected{% endif %}>
+                                    {{ imp }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                            <small class="text-muted">
+                                Se usa para: remitos A4, facturas, presupuestos.
+                            </small>
+                        </div>
+
+                        <button type="submit" class="btn btn-primary btn-lg w-100 fw-bold">
+                            <i class="fas fa-save me-1"></i> Guardar Configuración
+                        </button>
+                    </form>
+
+                    <hr class="my-4">
+
+                    <div class="d-flex gap-2">
+                        <a href="/printers" class="btn btn-outline-secondary flex-grow-1" target="_blank">
+                            <i class="fas fa-list me-1"></i> Ver JSON de impresoras
+                        </a>
+                        <a href="/health" class="btn btn-outline-info flex-grow-1" target="_blank">
+                            <i class="fas fa-heartbeat me-1"></i> Health check
+                        </a>
+                    </div>
+
+                </div>
+                <div class="card-footer text-muted small text-center">
+                    Servicio local POS &mdash; {{ so }} &mdash; puerto {{ puerto }}
+                </div>
+            </div>
+        </div>
+    </body>
+    </html>
+    '''
+    return render_template_string(
+        html,
+        config=config,
+        impresoras=impresoras,
+        so=SO,
+        puerto=PUERTO,
+        mensaje=mensaje,
+    )
+
+
 @app.route('/print', methods=['POST'])
 def imprimir():
     try:
@@ -147,21 +302,20 @@ def imprimir():
         tipo = data.get('tipo', 'ticket')
         cortar = data.get('cortar', True)
         abrir_cajon = data.get('abrir_cajon', False)
-        modo = data.get('modo', 'html')  # 'html' o 'texto'
+        modo = data.get('modo', 'html')
 
-        # 🔽 NUEVO: definir la impresora (permite override desde el JS)
-        impresora = data.get('impresora', IMPRESORA_DEFAULT)
+        # 🔽 CAMBIADO: usar config guardada según el tipo
+        # Prioridad: 1) parámetro 'impresora' del JSON, 2) config según tipo, 3) default
+        impresora = data.get('impresora') or obtener_impresora_por_tipo(tipo)
 
         if not contenido:
             return jsonify({'success': False, 'error': 'Falta "contenido"'}), 400
 
-        # 🔽 Si viene como texto plano, usarlo tal cual
         if modo == 'texto':
             texto = contenido
         else:
             texto = html_a_texto(contenido)
 
-        # Imprimir según el SO
         if SO == 'Windows':
             resultado = imprimir_windows(texto, impresora, cortar, abrir_cajon)
         elif SO == 'Linux':
@@ -173,7 +327,7 @@ def imprimir():
             }), 400
 
         if resultado['success']:
-            logger.info(f"Impreso OK: {tipo} ({len(texto)} caracteres) → {impresora}")
+            logger.info(f"Impreso OK: {tipo} ({len(texto)} chars) → {impresora}")
             return jsonify(resultado)
         else:
             return jsonify(resultado), 500
@@ -188,51 +342,33 @@ def imprimir():
 # ============================================================
 
 def html_a_texto(html):
-    """
-    Convierte el HTML del ticket a texto plano.
-    """
-    # Quitar scripts y estilos
+    """Convierte el HTML del ticket a texto plano."""
     html = re.sub(r'<script.*?</script>', '', html, flags=re.DOTALL | re.IGNORECASE)
     html = re.sub(r'<style.*?</style>', '', html, flags=re.DOTALL | re.IGNORECASE)
-
-    # Saltos de línea
     html = re.sub(r'<br\s*/?>', '\n', html, flags=re.IGNORECASE)
     html = re.sub(r'</p>', '\n', html, flags=re.IGNORECASE)
     html = re.sub(r'</div>', '\n', html, flags=re.IGNORECASE)
     html = re.sub(r'</tr>', '\n', html, flags=re.IGNORECASE)
-
-    # Tabs para celdas
     html = re.sub(r'</td>', '\t', html, flags=re.IGNORECASE)
-
-    # Líneas horizontales
     html = re.sub(r'<hr\s*/?>', '-' * 42 + '\n', html, flags=re.IGNORECASE)
-
-    # Quitar tags restantes
     html = re.sub(r'<[^>]+>', '', html)
-
-    # Entidades HTML
     html = html.replace('&nbsp;', ' ')
     html = html.replace('&amp;', '&')
     html = html.replace('&lt;', '<')
     html = html.replace('&gt;', '>')
     html = html.replace('&quot;', '"')
     html = html.replace('&#39;', "'")
-
-    # Normalizar saltos múltiples
     html = re.sub(r'\n[ \t]+\n', '\n\n', html)
     html = re.sub(r'\n{3,}', '\n\n', html)
-
     return html.strip()
 
 
 def listar_impresoras_windows():
-    """Lista impresoras instaladas en Windows usando pywin32."""
+    """Lista impresoras instaladas en Windows."""
     try:
         import win32print
-        impresoras = [p[2] for p in win32print.EnumPrinters(2)]
-        return impresoras
+        return [p[2] for p in win32print.EnumPrinters(2)]
     except ImportError:
-        # Fallback a wmic
         try:
             resultado = subprocess.run(
                 ['wmic', 'printer', 'get', 'name'],
@@ -264,44 +400,33 @@ def listar_impresoras_linux():
 
 
 def imprimir_windows(texto, impresora, cortar=True, abrir_cajon=False):
-    """
-    Imprime en Windows usando el spooler (pywin32).
-    Envía los comandos ESC/POS directamente al puerto.
-    """
+    """Imprime en Windows usando el spooler (pywin32)."""
     try:
         import win32print
 
-        # Comandos ESC/POS
-        INIT = b'\x1b\x40'                     # Inicializar
-        CODEPAGE = b'\x1b\x74\x02'             # Codepage CP850 (acentos/ñ)
-        ALIGN_LEFT = b'\x1b\x61\x00'           # Alinear izquierda
-        CUT = b'\x1d\x56\x41\x03'              # Cortar papel
-        OPEN_DRAWER = b'\x1b\x70\x00\x19\xfa'  # Abrir cajón
+        INIT = b'\x1b\x40'
+        CODEPAGE = b'\x1b\x74\x02'
+        ALIGN_LEFT = b'\x1b\x61\x00'
+        CUT = b'\x1d\x56\x41\x03'
+        OPEN_DRAWER = b'\x1b\x70\x00\x19\xfa'
 
-        # 🔽 NUEVO: feed ESC/POS real (no depende del texto).
-        # ESC d n → avanza n líneas físicas antes del corte.
-        # Esto evita que el driver de Windows recorte los \n sobrantes.
         FEED_ESC_POS = b'\x1b\x64' + bytes([FEED_LINEAS])
 
-        # Construir buffer ESC/POS
         buffer = INIT + CODEPAGE + ALIGN_LEFT
 
         if abrir_cajon:
             buffer += OPEN_DRAWER
 
-        # Texto (codificar en CP850 para acentos y ñ)
         try:
             buffer += texto.encode('cp850', errors='replace')
         except Exception:
             buffer += texto.encode('utf-8', errors='replace')
 
-        # 🔽 CAMBIADO: feed físico ESC/POS en lugar de '\n\n\n'
         buffer += FEED_ESC_POS
 
         if cortar:
             buffer += CUT
 
-        # Abrir la impresora y enviar el trabajo como RAW
         handle = win32print.OpenPrinter(impresora)
         try:
             job_id = win32print.StartDocPrinter(
@@ -368,15 +493,14 @@ def imprimir_linux(texto, impresora):
 # ============================================================
 
 if __name__ == '__main__':
-    logger.info(f"=== Servicio de impresión POS ===")
+    logger.info("=== Servicio de impresión POS ===")
     logger.info(f"Sistema operativo: {SO}")
-    logger.info(f"Impresora: {IMPRESORA_DEFAULT}")
-    logger.info(f"Método: USB (spooler Windows)")
+    logger.info(f"Impresora por defecto: {IMPRESORA_DEFAULT}")
     logger.info(f"Feed antes de cortar: {FEED_LINEAS} líneas")
+    logger.info(f"Config file: {CONFIG_FILE}")
     logger.info(f"Escuchando en: http://127.0.0.1:{PUERTO}")
-    logger.info(f"Health:        http://127.0.0.1:{PUERTO}/health")
-    logger.info(f"Test:          http://127.0.0.1:{PUERTO}/test-connection")
-    logger.info(f"Impresoras:    http://127.0.0.1:{PUERTO}/printers")
+    logger.info(f"Config UI:      http://127.0.0.1:{PUERTO}/config")
+    logger.info(f"Health:         http://127.0.0.1:{PUERTO}/health")
     logger.info(f"=================================")
 
     app.run(

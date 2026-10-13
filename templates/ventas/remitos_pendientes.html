@@ -3,6 +3,18 @@
 {% block title %}Remitos Pendientes{% endblock %}
 
 {% block content %}
+<style>
+    .link-repartidor {
+        color: inherit;
+        text-decoration: none;
+        transition: color 0.15s ease;
+    }
+    .link-repartidor:hover {
+        color: #0d6efd !important;
+        text-decoration: underline !important;
+    }
+</style>
+
 <div class="container-fluid py-3">
 
     <!-- ENCABEZADO -->
@@ -94,6 +106,8 @@
                             <th>Fecha</th>
                             <th>Cliente</th>
                             <th>Vendedor</th>
+                            <th>Repartidor</th>
+                            <th>Dirección</th>
                             <th class="text-end">Total</th>
                             <th class="text-center">Días</th>
                             <th class="text-center">Entrega</th>
@@ -116,10 +130,40 @@
                                 {% if r.cliente %}
                                     {{ r.cliente.nombre }}
                                 {% else %}
-                                    <span class="text-muted">Consumidor Final</span>
+                                    <span class="text-secondary">Consumidor Final</span>
                                 {% endif %}
                             </td>
                             <td class="small">{{ r.vendedor.username|default:"-" }}</td>
+
+                            <!-- 🔽 Repartidor (columna separada) -->
+                            <td class="small">
+                                {% if r.repartidor %}
+                                    <a href="{% url 'ventas:repartidor_pendientes' r.repartidor.perfil_repartidor.id %}"
+                                       class="link-repartidor"
+                                       title="Ver pendientes de este repartidor">
+                                        <i class="fas fa-motorcycle text-secondary me-1"></i>
+                                        <strong>#{{ r.repartidor.perfil_repartidor.id|default:r.repartidor.id }}</strong>
+                                        &mdash;
+                                        {{ r.repartidor.get_full_name|default:r.repartidor.username }}
+                                    </a>
+                                {% else %}
+                                    <span class="text-secondary fst-italic">— Sin asignar —</span>
+                                {% endif %}
+                            </td>
+
+                            <!-- 🔽 Dirección (columna separada) -->
+                            <td class="small">
+                                {% if r.direccion_entrega %}
+                                    <i class="fas fa-map-marker-alt text-secondary me-1"></i>{{ r.direccion_entrega }}
+                                {% elif r.repartidor %}
+                                    <span class="text-danger">
+                                        <i class="fas fa-exclamation-triangle me-1"></i>Sin dirección
+                                    </span>
+                                {% else %}
+                                    <span class="text-secondary">—</span>
+                                {% endif %}
+                            </td>
+
                             <td class="text-end fw-bold text-success">${{ r.total|floatformat:2 }}</td>
                             <td class="text-center">
                                 {% if r.dias_desde_emision > 7 %}
@@ -202,7 +246,7 @@
                         </tr>
                         {% empty %}
                         <tr>
-                            <td colspan="10" class="text-center py-5 text-muted">
+                            <td colspan="12" class="text-center py-5 text-secondary">
                                 <i class="fas fa-check-circle fa-3x mb-3 d-block text-success opacity-50"></i>
                                 <strong>¡Todo cobrado!</strong>
                                 <p class="mb-0 small">No hay remitos pendientes con los filtros actuales.</p>
@@ -218,10 +262,10 @@
         {% if page_obj.object_list %}
         <div class="card-footer bg-body border-top d-flex justify-content-between align-items-center flex-wrap gap-2 py-2">
             <div>
-                <span class="small text-muted me-2">
+                <span class="small text-secondary me-2">
                     <span id="contador_seleccionados">0</span> remito(s) seleccionado(s)
                 </span>
-                <span class="small text-muted">
+                <span class="small text-secondary">
                     Total: <strong id="total_seleccionados" class="text-success">$0.00</strong>
                 </span>
             </div>
@@ -270,7 +314,41 @@
     {% endif %}
 </div>
 
-<!-- SCRIPT PARA SELECCIÓN MÚLTIPLE + ACCIONES -->
+<!-- MODAL POST-FACTURACIÓN -->
+<div id="overlayPostFacturacion" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0, 0, 0, 0.75); z-index: 9998; align-items: center; justify-content: center;">
+    <div class="card border-0 shadow-lg" style="width: 95%; max-width: 500px; border-radius: 12px; overflow: hidden;">
+        <div class="card-header bg-success text-white py-3 text-center border-0">
+            <h4 class="mb-0 fw-bold"><i class="fas fa-check-circle me-2"></i> ¡Factura Emitida!</h4>
+        </div>
+        <div class="card-body p-4 text-center">
+            <p class="fs-5 mb-1">Comprobante ID: <strong id="modal_venta_id" class="text-success">#0</strong></p>
+            <p class="small text-secondary mb-2">CAE: <strong id="modal_cae">-</strong></p>
+            <p class="small text-secondary mb-4" id="modal_estado_display"></p>
+
+            <div class="d-grid gap-3">
+                <button type="button" class="btn btn-success btn-lg fw-bold text-start p-3" id="btn_imprimir_ticket">
+                    <i class="fas fa-print me-3 text-white fa-lg"></i> <span id="txt_btn_imprimir">Imprimir Ticket Térmico (80mm)</span>
+                </button>
+                <button type="button" class="btn btn-outline-dark btn-lg fw-bold text-start p-3" id="btn_imprimir_factura">
+                    <i class="fas fa-file-invoice-dollar me-3 fa-lg"></i> Ver Factura A4
+                </button>
+
+                <div id="aviso_sin_servicio" class="alert alert-warning small mb-0 py-2 d-none">
+                    <i class="fas fa-exclamation-triangle me-1"></i>
+                    Servicio de impresión no disponible. Usá el botón "Ver Factura A4".
+                </div>
+            </div>
+        </div>
+        <div class="card-footer bg-body-tertiary text-center py-3 border-0">
+            <button type="button" class="btn btn-secondary px-5 fw-bold" id="btn_cerrar_modal">
+                Cerrar <i class="fas fa-times ms-1"></i>
+            </button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
 <script>
 document.addEventListener('DOMContentLoaded', function () {
     const chkTodos = document.getElementById('chk_todos');
@@ -279,7 +357,19 @@ document.addEventListener('DOMContentLoaded', function () {
     const totalDisplay = document.getElementById('total_seleccionados');
     const btnFacturar = document.getElementById('btn_facturar_seleccionados');
 
-    // Mapa de precios
+    // Referencias al modal
+    const overlayPostFacturacion = document.getElementById('overlayPostFacturacion');
+    const modalVentaId = document.getElementById('modal_venta_id');
+    const modalCae = document.getElementById('modal_cae');
+    const modalEstadoDisplay = document.getElementById('modal_estado_display');
+    const btnImprimirTicket = document.getElementById('btn_imprimir_ticket');
+    const txtBtnImprimir = document.getElementById('txt_btn_imprimir');
+    const btnImprimirFactura = document.getElementById('btn_imprimir_factura');
+    const avisoSinServicio = document.getElementById('aviso_sin_servicio');
+    const btnCerrarModal = document.getElementById('btn_cerrar_modal');
+
+    let ultimaVentaId = null;
+
     const precios = {
         {% for r in page_obj %}
             {{ r.id }}: {{ r.total|floatformat:"2u" }},
@@ -308,11 +398,102 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     });
 
-    // =========================================================
+    async function detectarServicioImpresion() {
+        try {
+            const r = await fetch('http://127.0.0.1:8085/health', { cache: 'no-store' });
+            return r.ok;
+        } catch {
+            return false;
+        }
+    }
+
+    function mostrarModalPostFacturacion(ventaId, cae, numeroComprobante, tipoComprobante) {
+        ultimaVentaId = ventaId;
+        modalVentaId.textContent = '#' + ventaId;
+        modalCae.textContent = cae || '-';
+        modalEstadoDisplay.textContent = 'Comprobante: ' + (tipoComprobante || 'Factura') + ' | N° ' + (numeroComprobante || '-');
+
+        detectarServicioImpresion().then(disponible => {
+            if (disponible) {
+                avisoSinServicio.classList.add('d-none');
+                btnImprimirTicket.disabled = false;
+                btnImprimirTicket.classList.remove('btn-secondary');
+                btnImprimirTicket.classList.add('btn-success');
+            } else {
+                avisoSinServicio.classList.remove('d-none');
+                btnImprimirTicket.disabled = true;
+                btnImprimirTicket.classList.remove('btn-success');
+                btnImprimirTicket.classList.add('btn-secondary');
+            }
+        });
+
+        overlayPostFacturacion.style.display = 'flex';
+    }
+
+    btnImprimirTicket.addEventListener('click', async function () {
+        if (!ultimaVentaId) return;
+
+        const textoOriginal = txtBtnImprimir.textContent;
+        btnImprimirTicket.disabled = true;
+        txtBtnImprimir.textContent = 'Imprimiendo...';
+
+        try {
+            const respTicket = await fetch(`/ventas/ticket-texto/${ultimaVentaId}/`);
+            const ticketData = await respTicket.json();
+
+            if (!ticketData.success) {
+                alert('Error al generar el ticket: ' + (ticketData.error || 'desconocido'));
+                btnImprimirTicket.disabled = false;
+                txtBtnImprimir.textContent = textoOriginal;
+                return;
+            }
+
+            const respPrint = await fetch('http://127.0.0.1:8085/print', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    contenido: ticketData.ticket_texto,
+                    tipo: 'ticket',
+                    cortar: true,
+                    modo: 'texto',
+                }),
+            });
+
+            const printData = await respPrint.json();
+
+            if (printData.success) {
+                txtBtnImprimir.textContent = '✅ ¡Impreso!';
+                setTimeout(() => {
+                    txtBtnImprimir.textContent = textoOriginal;
+                    btnImprimirTicket.disabled = false;
+                }, 2000);
+            } else {
+                alert('Error al imprimir: ' + (printData.error || 'desconocido'));
+                btnImprimirTicket.disabled = false;
+                txtBtnImprimir.textContent = textoOriginal;
+            }
+        } catch (err) {
+            console.error('[Remitos] Error imprimiendo:', err);
+            alert('No se pudo conectar con el servicio de impresión.\n\nVerificá que esté corriendo en la PC.');
+            btnImprimirTicket.disabled = false;
+            txtBtnImprimir.textContent = textoOriginal;
+        }
+    });
+
+    btnImprimirFactura.addEventListener('click', function () {
+        if (ultimaVentaId) {
+            window.open(`/ventas/comprobante/${ultimaVentaId}/factura/`, '_blank');
+        }
+    });
+
+    btnCerrarModal.addEventListener('click', function () {
+        overlayPostFacturacion.style.display = 'none';
+        location.reload();
+    });
+
     // FACTURAR SELECCIONADOS
-    // =========================================================
     if (btnFacturar) {
-        btnFacturar.addEventListener('click', async function () {  // 🔽 CAMBIADO: async
+        btnFacturar.addEventListener('click', async function () {
             const seleccionados = Array.from(checkboxes).filter(c => c.checked);
             if (seleccionados.length === 0) return;
 
@@ -329,7 +510,6 @@ document.addEventListener('DOMContentLoaded', function () {
 
             const ids = seleccionados.map(c => c.value);
 
-            // 🔽 CAMBIADO: confirmAsync en lugar de confirm()
             const confirmar = await confirmAsync(
                 '¿Facturar ' + ids.length + ' remito(s)?<br><br>' +
                 'Remitos: <strong>#' + ids.join(', #') + '</strong>',
@@ -372,8 +552,14 @@ document.addEventListener('DOMContentLoaded', function () {
                 .then(r => r.json())
                 .then(data => {
                     if (data.status === 'success') {
-                        alert('✅ Factura emitida correctamente.\n\nCAE: ' + (data.cae || 'pendiente'));
-                        location.reload();
+                        mostrarModalPostFacturacion(
+                            data.venta_id,
+                            data.cae || '-',
+                            data.numero_comprobante || '-',
+                            data.tipo_comprobante_display || 'Factura'
+                        );
+                        btnFacturar.disabled = false;
+                        btnFacturar.innerHTML = '<i class="fas fa-file-invoice-dollar me-1"></i> Facturar Seleccionados';
                     } else {
                         alert('❌ Error: ' + (data.message || 'No se pudo facturar.'));
                         btnFacturar.disabled = false;
@@ -389,14 +575,12 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
-    // =========================================================
     // FACTURAR INDIVIDUAL
-    // =========================================================
     document.querySelectorAll('.btn-facturar-individual').forEach(btn => {
-        btn.addEventListener('click', async function () {  // 🔽 CAMBIADO: async
+        btn.addEventListener('click', async function () {
             const remitoId = this.dataset.remitoId;
+            const boton = this;
 
-            // 🔽 CAMBIADO: confirmAsync en lugar de confirm()
             const confirmar = await confirmAsync(
                 '¿Facturar el remito <strong>#' + remitoId + '</strong>?',
                 {
@@ -407,8 +591,8 @@ document.addEventListener('DOMContentLoaded', function () {
             );
             if (!confirmar) return;
 
-            this.disabled = true;
-            this.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+            boton.disabled = true;
+            boton.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
 
             fetch(`{% url 'ventas:obtener_detalles_remitos' %}?ids=${remitoId}`)
                 .then(r => r.json())
@@ -438,31 +622,34 @@ document.addEventListener('DOMContentLoaded', function () {
                 .then(r => r.json())
                 .then(data => {
                     if (data.status === 'success') {
-                        alert('✅ Factura emitida.\n\nCAE: ' + (data.cae || 'pendiente'));
-                        location.reload();
+                        mostrarModalPostFacturacion(
+                            data.venta_id,
+                            data.cae || '-',
+                            data.numero_comprobante || '-',
+                            data.tipo_comprobante_display || 'Factura'
+                        );
+                        boton.disabled = false;
+                        boton.innerHTML = '<i class="fas fa-file-invoice-dollar"></i>';
                     } else {
                         alert('❌ Error: ' + (data.message || 'No se pudo facturar.'));
-                        this.disabled = false;
-                        this.innerHTML = '<i class="fas fa-file-invoice-dollar"></i>';
+                        boton.disabled = false;
+                        boton.innerHTML = '<i class="fas fa-file-invoice-dollar"></i>';
                     }
                 })
                 .catch(err => {
                     console.error('Error:', err);
                     alert('❌ Error: ' + err.message);
-                    this.disabled = false;
-                    this.innerHTML = '<i class="fas fa-file-invoice-dollar"></i>';
+                    boton.disabled = false;
+                    boton.innerHTML = '<i class="fas fa-file-invoice-dollar"></i>';
                 });
         });
     });
 
-    // =========================================================
-    // MARCAR COMO ENTREGADO (admin)
-    // =========================================================
+    // MARCAR COMO ENTREGADO
     document.querySelectorAll('.btn-marcar-entregado').forEach(btn => {
-        btn.addEventListener('click', async function () {  // 🔽 CAMBIADO: async
+        btn.addEventListener('click', async function () {
             const remitoId = this.dataset.remitoId;
 
-            // 🔽 CAMBIADO: confirmAsync en lugar de confirm()
             const confirmar = await confirmAsync(
                 '¿Marcar el remito <strong>#' + remitoId + '</strong> como ENTREGADO?',
                 {

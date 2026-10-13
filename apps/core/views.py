@@ -1,14 +1,14 @@
 from django.shortcuts import render
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
-from django.db.models import Sum, Count
+from django.db.models import Sum, Count, Q
 from django.utils import timezone
 from apps.ventas.models import Venta, DetalleVenta
 
 
 @login_required
 def dashboard(request):
-    """Dashboard con KPIs, accesos rápidos por rol y últimas ventas paginadas."""
+    """Dashboard con KPIs, accesos rápidos por rol, alertas y últimas ventas paginadas."""
 
     user = request.user
     rol = 'superadmin' if user.is_superuser else (getattr(user, 'rol', '') or 'vendedor')
@@ -25,6 +25,19 @@ def dashboard(request):
         'cuenta_corriente': config.modulo_cuenta_corriente if config else True,
         'multi_sucursal': config.modulo_multi_sucursal if config else False,
     }
+
+    # ============================================================
+    # 🔽 ALERTAS POR ROL
+    # ============================================================
+    from apps.alertas.models import Alerta
+
+    alertas = Alerta.objects.filter(
+        leida=False,
+    ).filter(
+        Q(usuario=user) |
+        Q(rol=rol) |
+        Q(usuario__isnull=True, rol__isnull=True)
+    ).order_by('-creada')[:10]
 
     # ============================================================
     # ACCESOS RÁPIDOS SEGÚN ROL
@@ -126,7 +139,7 @@ def dashboard(request):
         ).select_related('sucursal').first()
 
     # ============================================================
-    # KPIs GLOBALES (los que ya tenías)
+    # KPIs GLOBALES
     # ============================================================
     total_recaudado = Venta.objects.aggregate(total=Sum('total'))['total'] or 0.0
     cantidad_ventas = Venta.objects.count()
@@ -164,6 +177,9 @@ def dashboard(request):
     page_obj = paginator.get_page(request.GET.get('page'))
 
     context = {
+        # Alertas
+        'alertas': alertas,
+
         # Nuevos
         'rol': rol,
         'modulos': modulos,

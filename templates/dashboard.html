@@ -29,6 +29,94 @@
         </div>
     </div>
 
+    <!-- 🔽 ALERTAS POR ROL -->
+    {% if alertas %}
+<div class="alert alert-warning border-0 shadow-sm mb-4" id="bloque-alertas">
+    <h5 class="fw-bold mb-3 d-flex align-items-center justify-content-between">
+        <span>
+            <i class="fas fa-bell me-2 text-warning"></i>
+            Alertas ({{ alertas|length }})
+        </span>
+        <button type="button" class="btn btn-sm btn-link text-secondary p-0" 
+                onclick="document.getElementById('bloque-alertas').style.display='none'"
+                title="Ocultar temporalmente">
+            <i class="fas fa-eye-slash"></i>
+        </button>
+    </h5>
+    <ul class="mb-0 ps-3">
+        {% for a in alertas %}
+        <li class="mb-2 d-flex align-items-start" id="alerta-{{ a.id }}">
+            <div class="flex-grow-1">
+                <span class="badge bg-{% if a.nivel == 'danger' %}danger{% elif a.nivel == 'warning' %}warning text-dark{% else %}info{% endif %} me-1">
+                    {{ a.get_nivel_display }}
+                </span>
+                {% if a.url %}
+                    <a href="{{ a.url }}" class="text-decoration-none fw-bold text-body">{{ a.titulo }}</a>
+                {% else %}
+                    <strong>{{ a.titulo }}</strong>
+                {% endif %}
+                {% if a.mensaje %}
+                    <br><small class="text-secondary">{{ a.mensaje }}</small>
+                {% endif %}
+            </div>
+            <button type="button" 
+                    class="btn btn-sm btn-link text-danger p-0 ms-2 btn-descartar-alerta"
+                    data-alerta-id="{{ a.id }}"
+                    title="Descartar alerta">
+                <i class="fas fa-times"></i>
+            </button>
+        </li>
+        {% endfor %}
+    </ul>
+</div>
+
+<script>
+document.querySelectorAll('.btn-descartar-alerta').forEach(btn => {
+    btn.addEventListener('click', async function() {
+        const alertaId = this.dataset.alertaId;
+        const li = document.getElementById('alerta-' + alertaId);
+        const boton = this;
+        
+        boton.disabled = true;
+        boton.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+
+        try {
+            const resp = await fetch(`/alertas/${alertaId}/marcar-leida/`, {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': '{{ csrf_token }}',
+                    'Content-Type': 'application/json',
+                },
+            });
+            const data = await resp.json();
+
+            if (data.success) {
+                // Animación de salida
+                li.style.transition = 'opacity 0.3s';
+                li.style.opacity = '0';
+                setTimeout(() => {
+                    li.remove();
+                    // Si no quedan alertas, ocultar el bloque
+                    const restantes = document.querySelectorAll('#bloque-alertas li').length;
+                    if (restantes === 0) {
+                        document.getElementById('bloque-alertas').style.display = 'none';
+                    }
+                }, 300);
+            } else {
+                alert('Error: ' + data.error);
+                boton.disabled = false;
+                boton.innerHTML = '<i class="fas fa-times"></i>';
+            }
+        } catch (err) {
+            alert('Error de conexión: ' + err.message);
+            boton.disabled = false;
+            boton.innerHTML = '<i class="fas fa-times"></i>';
+        }
+    });
+});
+</script>
+{% endif %}
+
     <!-- KPIs CONTEXTUALES -->
     {% if kpis %}
     <div class="row g-3 mb-4">
