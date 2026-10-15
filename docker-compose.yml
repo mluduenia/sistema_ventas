@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   web:
-    image: ghcr.io/mluduenia/sistema_ventas:latest
+    image: ghcr.io/mluduenia/sistema_ventas:v2-devConRepartoCompleto
     container_name: pos_app_web
     restart: unless-stopped
     env_file:
