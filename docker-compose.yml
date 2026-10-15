@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  web:
+    image: ghcr.io/mluduenia/sistema_ventas:latest
+    container_name: pos_app_web
+    restart: unless-stopped
+    env_file:
+      - /opt/pos_app/.env
+    volumes:
+      - /opt/pos_app/media:/app/media
+      - /opt/pos_app/staticfiles:/app/staticfiles
+      - /opt/pos_app/logs:/app/logs
+      - /opt/pos_app/afip_cache:/app/afip_cache
+      - /opt/pos_app/wsdl_cache:/app/wsdl_cache
+      - /opt/pos_app/certificados:/app/certificados:ro
+    ports:
+      - "8083:8000"
+    environment:
+      DEBUG: "False"
+      ALLOWED_HOSTS: "10.0.10.181,localhost,127.0.0.1"

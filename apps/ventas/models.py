@@ -428,6 +428,38 @@ class Venta(models.Model):
     tipo_comprobante = models.IntegerField(
         "Tipo de Comprobante", choices=TIPOS_COMPROBANTE, default=6
     )
+
+    # 🔽 NUEVO: desglose de IVA
+    subtotal_neto = models.DecimalField(
+        "Subtotal (sin IVA)",
+        max_digits=12,
+        decimal_places=2,
+        default=0,
+        help_text='Importe sin IVA'
+    )
+
+    iva_total = models.DecimalField(
+        "IVA Total",
+        max_digits=12,
+        decimal_places=2,
+        default=0,
+        help_text='Importe de IVA'
+    )
+
+    alicuota_iva = models.DecimalField(
+        "Alícuota IVA Aplicada (%)",
+        max_digits=5,
+        decimal_places=2,
+        default=21.00,
+        help_text='Alícuota aplicada al comprobante'
+    )
+
+    discrimina_iva = models.BooleanField(
+        "Discrimina IVA",
+        default=False,
+        help_text='True si el comprobante discrimina IVA (Factura A o B).'
+    )
+
     numero_comprobante = models.IntegerField(
         "N° Comprobante ARCA", null=True, blank=True
     )

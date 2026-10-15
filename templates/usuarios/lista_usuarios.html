@@ -1,0 +1,247 @@
+{% extends 'base.html' %}
+
+{% block title %}Usuarios / Personal{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3">
+
+    <!-- ENCABEZADO -->
+    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+        <div>
+            <h4 class="fw-bold m-0">
+                <i class="fas fa-users-cog text-primary me-2"></i>
+                Usuarios / Personal
+            </h4>
+            <small class="text-muted">{{ total_activos }} usuarios activos</small>
+        </div>
+        <a href="{% url 'usuarios:crear_usuario' %}" class="btn btn-primary">
+            <i class="fas fa-plus me-1"></i> Nuevo Usuario
+        </a>
+    </div>
+
+    <!-- KPIs POR ROL -->
+    <div class="row g-2 mb-3">
+        {% for codigo, data in total_por_rol.items %}
+        <div class="col-6 col-md-3 col-lg-2">
+            <a href="?rol={{ codigo }}" class="text-decoration-none">
+                <div class="card border-0 shadow-sm h-100 {% if rol_filtro == codigo %}border border-primary{% endif %}">
+                    <div class="card-body p-2 text-center">
+                        <div class="fw-bold fs-4">{{ data.cantidad }}</div>
+                        <small class="text-muted">{{ data.label }}</small>
+                    </div>
+                </div>
+            </a>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- FILTROS -->
+    <div class="card border-0 shadow-sm mb-3">
+        <div class="card-body">
+            <form method="get" class="row g-2 align-items-end">
+                <div class="col-md-3">
+                    <label class="form-label small fw-bold">Buscar</label>
+                    <input type="text" name="q" value="{{ busqueda }}" class="form-control" placeholder="Nombre, usuario o email...">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small fw-bold">Rol</label>
+                    <select name="rol" class="form-select">
+                        <option value="">Todos</option>
+                        {% for codigo, label in roles_disponibles %}
+                            <option value="{{ codigo }}" {% if rol_filtro == codigo %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small fw-bold">Estado</label>
+                    <select name="estado" class="form-select">
+                        <option value="1" {% if estado == '1' %}selected{% endif %}>Activos</option>
+                        <option value="0" {% if estado == '0' %}selected{% endif %}>Inactivos</option>
+                        <option value="todos" {% if estado == 'todos' %}selected{% endif %}>Todos</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small fw-bold">Sucursal</label>
+                    <select name="sucursal" class="form-select">
+                        <option value="">Todas</option>
+                        {% for s in sucursales_disponibles %}
+                            <option value="{{ s.id }}" {% if sucursal_id == s.id|stringformat:"s" %}selected{% endif %}>{{ s.nombre }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="fas fa-search me-1"></i> Filtrar
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- TABLA -->
+    <div class="card border-0 shadow-sm">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Usuario</th>
+                            <th>Nombre completo</th>
+                            <th>Rol</th>
+                            <th>Sucursal</th>
+                            <th>Contacto</th>
+                            <th class="text-center">Estado</th>
+                            <th class="text-center">Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for u in page_obj %}
+                        <tr>
+                            <td>
+                                <strong>{{ u.username }}</strong>
+                                {% if u.is_superuser %}
+                                    <span class="badge bg-danger ms-1" style="font-size: 9px;">SUPERADMIN</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ u.get_full_name|default:"-" }}</td>
+                            <td><span class="badge bg-secondary">{{ u.get_rol_display }}</span></td>
+                            <td>
+                                {% if u.sucursal %}<small>{{ u.sucursal.nombre }}</small>
+                                {% else %}<small class="text-muted">-</small>{% endif %}
+                            </td>
+                            <td>
+                                <small>
+                                    {% if u.email %}{{ u.email }}<br>{% endif %}
+                                    {% if u.telefono %}{{ u.telefono }}{% endif %}
+                                </small>
+                            </td>
+                            <td class="text-center">
+                                {% if u.activo %}
+                                    <span class="badge bg-success">Activo</span>
+                                {% else %}
+                                    <span class="badge bg-secondary">Inactivo</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-center">
+                                <div class="btn-group btn-group-sm">
+                                    <a href="{% url 'usuarios:editar_usuario' u.id %}" class="btn btn-outline-primary" title="Editar">
+                                        <i class="fas fa-edit"></i>
+                                    </a>
+                                    {% if u.activo %}
+                                        {% if u != request.user %}
+                                        <button type="button"
+                                                class="btn btn-outline-danger btn-baja-usuario"
+                                                data-usuario-id="{{ u.id }}"
+                                                data-usuario-nombre="{{ u.get_full_name|default:u.username }}"
+                                                title="Dar de baja">
+                                            <i class="fas fa-user-slash"></i>
+                                        </button>
+                                        {% endif %}
+                                    {% else %}
+                                        <button type="button"
+                                                class="btn btn-outline-success btn-reactivar-usuario"
+                                                data-usuario-id="{{ u.id }}"
+                                                data-usuario-nombre="{{ u.get_full_name|default:u.username }}"
+                                                title="Reactivar">
+                                            <i class="fas fa-user-check"></i>
+                                        </button>
+                                    {% endif %}
+                                </div>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="7" class="text-center text-muted py-4">
+                                <i class="fas fa-users fa-2x mb-2 opacity-50"></i>
+                                <p class="mb-0">No hay usuarios para mostrar.</p>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const csrfToken = '{{ csrf_token }}';
+
+    // BAJA
+    document.querySelectorAll('.btn-baja-usuario').forEach(btn => {
+        btn.addEventListener('click', async function () {
+            const id = this.dataset.usuarioId;
+            const nombre = this.dataset.usuarioNombre;
+            const boton = this;
+
+            const ok = await confirmAsync(
+                `¿Dar de baja a <strong>${nombre}</strong>?<br><br>` +
+                `<small class="text-muted">No se elimina el usuario, solo se desactiva.</small>`,
+                { textoAceptar: 'Sí, dar de baja', tipo: 'warning' }
+            );
+            if (!ok) return;
+
+            boton.disabled = true;
+            boton.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+
+            try {
+                const resp = await fetch(`/usuarios/${id}/baja/`, {
+                    method: 'POST',
+                    headers: {'X-CSRFToken': csrfToken},
+                });
+                if (resp.ok) {
+                    location.reload();
+                } else {
+                    alert('Error al dar de baja');
+                    boton.disabled = false;
+                    boton.innerHTML = '<i class="fas fa-user-slash"></i>';
+                }
+            } catch (err) {
+                alert('Error: ' + err.message);
+                boton.disabled = false;
+                boton.innerHTML = '<i class="fas fa-user-slash"></i>';
+            }
+        });
+    });
+
+    // REACTIVAR
+    document.querySelectorAll('.btn-reactivar-usuario').forEach(btn => {
+        btn.addEventListener('click', async function () {
+            const id = this.dataset.usuarioId;
+            const nombre = this.dataset.usuarioNombre;
+            const boton = this;
+
+            const ok = await confirmAsync(
+                `¿Reactivar a <strong>${nombre}</strong>?`,
+                { textoAceptar: 'Sí, reactivar', tipo: 'success' }
+            );
+            if (!ok) return;
+
+            boton.disabled = true;
+            boton.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+
+            try {
+                const resp = await fetch(`/usuarios/${id}/reactivar/`, {
+                    method: 'POST',
+                    headers: {'X-CSRFToken': csrfToken},
+                });
+                if (resp.ok) {
+                    location.reload();
+                } else {
+                    alert('Error al reactivar');
+                    boton.disabled = false;
+                    boton.innerHTML = '<i class="fas fa-user-check"></i>';
+                }
+            } catch (err) {
+                alert('Error: ' + err.message);
+                boton.disabled = false;
+                boton.innerHTML = '<i class="fas fa-user-check"></i>';
+            }
+        });
+    });
+});
+</script>
+{% endblock %}

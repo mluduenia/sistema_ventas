@@ -1,7 +1,11 @@
 from django.db import models
 from django.conf import settings
 
+
 class EmpresaConfig(models.Model):
+    # ============================================================
+    # CHOICES (definidos ANTES de usarse)
+    # ============================================================
     CONDICION_IVA_CHOICES = [
         ('RI', 'Responsable Inscripto'),
         ('MO', 'Monotributo'),
@@ -13,9 +17,6 @@ class EmpresaConfig(models.Model):
         ('PROD', 'Producción (Real)'),
     ]
 
-    # ============================================================
-    # MODO DE NEGOCIO / MÓDULOS ACTIVABLES
-    # ============================================================
     MODO_NEGOCIO_CHOICES = [
         ('LOCAL', 'Solo Local / Mostrador'),
         ('LOCAL_REPARTO', 'Local + Reparto'),
@@ -23,26 +24,50 @@ class EmpresaConfig(models.Model):
         ('CUSTOM', 'Personalizado'),
     ]
 
-    # Datos Comerciales
+    # ============================================================
+    # DATOS COMERCIALES
+    # ============================================================
     logo = models.ImageField('Logo del Comercio', upload_to='logos/', blank=True, null=True)
     razon_social = models.CharField(max_length=200, default='Mi Comercio S.A.')
     nombre_fantasia = models.CharField(max_length=200, blank=True, null=True, default='Mi Negocio')
     cuit = models.CharField(max_length=20, default='20-12345678-9')
-    condicion_iva = models.CharField(max_length=5, choices=CONDICION_IVA_CHOICES, default='MO')
+
+    # 🔽 Condición IVA del emisor
+    condicion_iva = models.CharField(
+        "Condición IVA del Emisor",
+        max_length=5,
+        choices=CONDICION_IVA_CHOICES,
+        default='MO',
+        help_text='Determina qué tipos de comprobante puede emitir el sistema.'
+    )
+
+    # 🔽 Alícuota de IVA por defecto
+    alicuota_iva_default = models.DecimalField(
+        "Alícuota IVA por Defecto (%)",
+        max_digits=5,
+        decimal_places=2,
+        default=21.00,
+        help_text='Alícuota de IVA por defecto. Ej: 21.00'
+    )
+
     iibb = models.CharField(max_length=50, blank=True, null=True, help_text='Número de Ingresos Brutos')
     inicio_actividades = models.DateField(blank=True, null=True)
     direccion = models.CharField(max_length=255, blank=True, null=True, default='Av. Principal 123')
     telefono = models.CharField(max_length=50, blank=True, null=True)
     email = models.EmailField(blank=True, null=True)
 
-    # Configuración SMTP
+    # ============================================================
+    # CONFIGURACIÓN SMTP
+    # ============================================================
     email_smtp_host = models.CharField(max_length=150, default='smtp.gmail.com', help_text='Ej: smtp.gmail.com o smtp.office365.com')
     email_smtp_port = models.IntegerField(default=587, help_text='Puerto SMTP habitual: 587 (TLS) o 465 (SSL)')
     email_smtp_user = models.CharField(max_length=150, blank=True, null=True, help_text='Tu correo emisor')
     email_smtp_password = models.CharField(max_length=150, blank=True, null=True, help_text='Contraseña de aplicación')
     email_smtp_use_tls = models.BooleanField(default=True)
 
-    # Configuración ARCA / AFIP
+    # ============================================================
+    # CONFIGURACIÓN ARCA / AFIP
+    # ============================================================
     punto_de_venta = models.IntegerField(default=1, help_text='Número de Punto de Venta habilitado en ARCA (Ej: 1)')
     ambiente_arca = models.CharField(max_length=5, choices=AMBIENTE_ARCA_CHOICES, default='HOMO')
     certificado_crt = models.FileField(upload_to='certificados/', blank=True, null=True, help_text='Archivo .crt obtenido en ARCA')
@@ -59,7 +84,6 @@ class EmpresaConfig(models.Model):
         help_text="Preset rápido. Al cambiarlo, se actualizan los módulos automáticamente."
     )
 
-    # --- Módulos individuales ---
     modulo_punto_venta = models.BooleanField(
         "Módulo Punto de Venta (Salón / Mostrador)",
         default=True,
@@ -97,6 +121,23 @@ class EmpresaConfig(models.Model):
 
     def __str__(self):
         return f"{self.razon_social} (CUIT: {self.cuit})"
+
+    # ============================================================
+    # PROPIEDADES
+    # ============================================================
+
+    @property
+    def discrimina_iva(self):
+        """True si el emisor debe discriminar IVA (Responsable Inscripto)."""
+        return self.condicion_iva == 'RI'
+
+    @property
+    def tipo_comprobante_default(self):
+        """Tipo de comprobante por defecto según condición del emisor."""
+        if self.condicion_iva == 'RI':
+            return 6  # Factura B (a Consumidor Final por defecto)
+        else:
+            return 11  # Factura C (Monotributo o Exento)
 
     # ============================================================
     # PRESETS DE MÓDULOS
@@ -168,7 +209,6 @@ class Sucursal(models.Model):
         ("DEPOSITO", "Depósito"),
     ]
 
-    # --- Datos básicos ---
     nombre = models.CharField("Nombre", max_length=100)
     tipo = models.CharField(
         "Tipo", max_length=20, choices=TIPO_CHOICES, default="SUCURSAL"
@@ -179,23 +219,20 @@ class Sucursal(models.Model):
         on_delete=models.PROTECT,
         related_name='sucursales',
         verbose_name="Lista de Precios",
-        null=True, blank=True,  # temporal para migración
+        null=True, blank=True,
         help_text="Lista de precios que usa esta sucursal"
     )
 
-    # --- Contacto ---
     direccion = models.CharField("Dirección", max_length=255, blank=True)
     telefono = models.CharField("Teléfono", max_length=30, blank=True)
     email = models.EmailField("Email", blank=True)
 
-    # --- Facturación ARCA ---
     punto_de_venta_arca = models.IntegerField(
         "Punto de Venta ARCA",
         default=1,
         help_text="Número de punto de venta habilitado en ARCA para esta sucursal"
     )
 
-    # --- Estado ---
     activa = models.BooleanField("Activa", default=True)
     es_central = models.BooleanField(
         "Es Central / Depósito Principal",
@@ -203,7 +240,6 @@ class Sucursal(models.Model):
         help_text="Marcar solo si es la sucursal principal (donde se produce/almacena)"
     )
 
-    # --- Auditoría ---
     fecha_alta = models.DateTimeField("Fecha de Alta", auto_now_add=True, null=True)
 
     class Meta:
@@ -220,6 +256,7 @@ class Sucursal(models.Model):
     def es_central_bool(self):
         """Alias por compatibilidad."""
         return self.es_central
+
 
 # =========================================================
 # LOG DE AUDITORÍA
@@ -257,10 +294,8 @@ class AuditLog(models.Model):
         ('CRITICAL', 'Crítico'),
     ]
 
-    # --- Cuándo ---
     fecha = models.DateTimeField("Fecha", auto_now_add=True, db_index=True)
 
-    # --- Quién ---
     usuario = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -274,7 +309,6 @@ class AuditLog(models.Model):
         help_text="Rol del usuario en el momento del evento",
     )
 
-    # --- Qué ---
     accion = models.CharField("Acción", max_length=20, choices=ACCIONES, db_index=True)
     nivel = models.CharField("Nivel", max_length=10, choices=NIVELES, default='INFO', db_index=True)
 
@@ -283,12 +317,10 @@ class AuditLog(models.Model):
 
     descripcion = models.TextField("Descripción")
 
-    # --- Detalles (JSON) ---
     datos_antes = models.JSONField("Datos antes", null=True, blank=True)
     datos_despues = models.JSONField("Datos después", null=True, blank=True)
     metadata = models.JSONField("Metadata", null=True, blank=True)
 
-    # --- Contexto técnico ---
     ip = models.GenericIPAddressField("IP", null=True, blank=True)
     user_agent = models.TextField("User Agent", blank=True)
 

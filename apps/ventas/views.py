@@ -393,24 +393,68 @@ def procesar_venta_ajax(request):
             except (ValueError, TypeError):
                 logger.warning(f"vendedor_id inválido: {vendedor_id}")
 
-        # 4. Determinar Estado, Tipo y Flags según Acción
+                # 4. Determinar Estado, Tipo y Flags según Acción
         es_remito = False
         saldo_pendiente = Decimal('0.00')
+
+        # 🔽 Determinar tipo de comprobante según emisor + cliente
+        config = EmpresaConfig.objects.first()
+        condicion_emisor = config.condicion_iva if config else 'MO'
 
         if accion_comprobante == 'PRESUPUESTO':
             estado_venta = 'PRESUPUESTO'
             tipo_comprobante_final = 0
+            discrimina_iva = False
         elif accion_comprobante == 'REMITO':
             es_remito = True
             tipo_comprobante_final = 0
             estado_venta = 'PENDIENTE_ENTREGA' if repartidor_obj else 'ENTREGADO'
+            discrimina_iva = False
         elif accion_comprobante == 'ENVIAR':
             tipo_comprobante_final = 0
             estado_venta = 'PENDIENTE_ENTREGA' if repartidor_obj else 'ENTREGADO'
+            discrimina_iva = False
         else:
-            # TICKET o FACTURA
+            # TICKET o FACTURA → el tipo lo determina el emisor + cliente
             estado_venta = 'COMPLETADO'
-            tipo_comprobante_final = tipo_comprobante
+
+            if condicion_emisor == 'MO':
+                # Monotributista → siempre Factura C
+                tipo_comprobante_final = 11
+                discrimina_iva = False
+            elif condicion_emisor == 'RI':
+                # Responsable Inscripto → según cliente
+                if cliente_obj and cliente_obj.condicion_iva == '1':
+                    tipo_comprobante_final = 1  # Factura A
+                else:
+                    tipo_comprobante_final = 6  # Factura B
+                discrimina_iva = True
+            else:
+                # Exento → siempre Factura C
+                tipo_comprobante_final = 11
+                discrimina_iva = False
+
+        # ============================================================
+        # VALIDACIONES DE COMPROBANTE
+        # ============================================================
+        if accion_comprobante in ['TICKET', 'FACTURA']:
+            if condicion_emisor == 'MO' and tipo_comprobante_final in [1, 6]:
+                return JsonResponse({
+                    'status': 'error',
+                    'message': 'Un Monotributista no puede emitir Facturas A o B. Solo Factura C.'
+                }, status=400)
+
+            if condicion_emisor == 'RI' and tipo_comprobante_final == 11:
+                return JsonResponse({
+                    'status': 'error',
+                    'message': 'Un Responsable Inscripto debe emitir Factura A o B.'
+                }, status=400)
+
+            if tipo_comprobante_final == 1 and (not cliente_obj or cliente_obj.condicion_iva != '1'):
+                return JsonResponse({
+                    'status': 'error',
+                    'message': 'Factura A solo se puede emitir a Responsable Inscripto.'
+                }, status=400)
 
         # 5. Procesar Ítems y Calcular Totales
         total_venta = Decimal('0.00')
@@ -452,7 +496,30 @@ def procesar_venta_ajax(request):
         monto_recibido = Decimal(str(monto_recibido))
         vuelto = max(Decimal('0.00'), monto_recibido - total_venta)
 
-                # 7. Obtener datos del Cliente
+                # ============================================================
+        # 6b. CALCULAR DESGLOSE DE IVA
+        # ============================================================
+        if discrimina_iva and config:
+            alicuota = Decimal(str(config.alicuota_iva_default)) / Decimal('100')
+
+            if total_venta > 0:
+                imp_neto = (total_venta / (Decimal('1') + alicuota)).quantize(
+                    Decimal("0.01"), rounding=ROUND_HALF_UP
+                )
+                imp_iva = (total_venta - imp_neto).quantize(
+                    Decimal("0.01"), rounding=ROUND_HALF_UP
+                )
+            else:
+                imp_neto = Decimal('0.00')
+                imp_iva = Decimal('0.00')
+
+            alicuota_aplicada = config.alicuota_iva_default
+        else:
+            imp_neto = total_venta
+            imp_iva = Decimal('0.00')
+            alicuota_aplicada = Decimal('0.00')
+
+        # 7. Obtener datos del Cliente
         cliente_obj = None
         if cliente_id:
             cliente_obj = Cliente.objects.filter(id=cliente_id).first()
@@ -502,8 +569,12 @@ def procesar_venta_ajax(request):
             estado_cobro=estado_cobro_val,
             saldo_pendiente=saldo_pendiente,
             direccion_entrega=direccion_entrega or None,
+            #Desglose de IVA
+            subtotal_neto=imp_neto,
+            iva_total=imp_iva,
+            alicuota_iva=alicuota_aplicada,
+            discrimina_iva=discrimina_iva,
         )
-        # 🔽 AGREGAR ESTAS LÍNEAS
         registrar_log(
             request,
             accion='VENTA',
@@ -3036,14 +3107,31 @@ def facturar_venta_existente(request, venta_id):
             'message': f'Esta venta ya tiene tipo de comprobante asignado ({venta.get_tipo_comprobante_display()}).'
         }, status=400)
 
+        # ============================================================
+    # DETERMINAR TIPO DE COMPROBANTE SEGÚN EMISOR + CLIENTE
     # ============================================================
-    # DETERMINAR TIPO DE COMPROBANTE SEGÚN CLIENTE
-    # ============================================================
-    # Si el cliente es Responsable Inscripto (condicion_iva=1) → Factura A
-    # Caso contrario → Factura B
-    tipo_comprobante_final = 6  # Factura B por defecto
-    if venta.cliente and venta.cliente.condicion_iva == '1':
-        tipo_comprobante_final = 1  # Factura A
+    config = EmpresaConfig.objects.first()
+    condicion_emisor = config.condicion_iva if config else 'MO'
+
+    if condicion_emisor == 'MO':
+        tipo_comprobante_final = 11  # Monotributista → Factura C
+        discrimina_iva = False
+    elif condicion_emisor == 'RI':
+        if venta.cliente and venta.cliente.condicion_iva == '1':
+            tipo_comprobante_final = 1  # Factura A
+        else:
+            tipo_comprobante_final = 6  # Factura B
+        discrimina_iva = True
+    else:
+        tipo_comprobante_final = 11  # Exento → Factura C
+        discrimina_iva = False
+
+    # Validaciones
+    if condicion_emisor == 'RI' and tipo_comprobante_final == 11:
+        return JsonResponse({
+            'status': 'error',
+            'message': 'Un Responsable Inscripto debe emitir Factura A o B.'
+        }, status=400)
 
     # ============================================================
     # VALIDAR CONFIGURACIÓN DE EMPRESA
@@ -3113,17 +3201,18 @@ def facturar_venta_existente(request, venta_id):
 
         total_venta = venta.total
 
-        # Cálculo de IVA según tipo
-        if tipo_comprobante_final == 11:
-            imp_neto = total_venta
-            imp_iva = Decimal('0.00')
-        else:
-            imp_neto = (total_venta / Decimal("1.21")).quantize(
+                # Cálculo de IVA según emisor
+        if discrimina_iva and config:
+            alicuota = Decimal(str(config.alicuota_iva_default)) / Decimal('100')
+            imp_neto = (total_venta / (Decimal('1') + alicuota)).quantize(
                 Decimal("0.01"), rounding=ROUND_HALF_UP
             )
             imp_iva = (total_venta - imp_neto).quantize(
                 Decimal("0.01"), rounding=ROUND_HALF_UP
             )
+        else:
+            imp_neto = total_venta
+            imp_iva = Decimal('0.00')
 
         wsfev1.CrearFactura(
             concepto=1,
@@ -3176,6 +3265,10 @@ def facturar_venta_existente(request, venta_id):
                 logger.warning(f"No se pudo parsear la fecha de vencimiento: {vencimiento_obtenido}")
         venta.numero_comprobante = cbte_nro
         venta.tipo_comprobante = tipo_comprobante_final
+        venta.subtotal_neto = imp_neto
+        venta.iva_total = imp_iva
+        venta.alicuota_iva = config.alicuota_iva_default if discrimina_iva else Decimal('0.00')
+        venta.discrimina_iva = discrimina_iva
         venta.save()
 
         logger.info(f"CAE Autorizado para Venta #{venta.id} (facturación diferida): {cae_obtenido}")

@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 
-    <!-- 🔽 NUEVO: aplicar tema ANTES de pintar (evita el flash de tema) -->
+    <!-- Aplicar tema ANTES de pintar (evita flash) -->
     <script>
         (function() {
             const theme = localStorage.getItem('theme') || 'light';
@@ -14,23 +14,27 @@
 
     <title>{% block title %}Sistema POS{% endblock %}</title>
 
-    <!-- Bootstrap 5 CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
-    <!-- FontAwesome 6 Icons -->
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
-
-    <!-- SDK Oficial de Mercado Pago V2 -->
     <script src="https://sdk.mercadopago.com/js/v2"></script>
-
-    <!-- Custom Theme -->
     <link rel="stylesheet" href="/static/css/custom.css">
 
     <style>
         @media (min-width: 768px) {
+            body { overflow-x: hidden; }
             .main-wrapper {
                 margin-left: 240px !important;
                 width: calc(100% - 240px) !important;
+                min-height: 100vh;
             }
+        }
+        html, body { overflow-x: hidden; }
+        .sidebar-fixed {
+            position: fixed;
+            top: 0; bottom: 0; left: 0;
+            width: 240px;
+            z-index: 1050;
+            overflow-y: auto;
         }
     </style>
 
@@ -41,17 +45,21 @@
 <body>
 
 <div class="d-flex min-vh-100">
-    <!-- SIDEBAR / MENÚ LATERAL FIJO (ESCRITORIO - PC) -->
-    <aside class="bg-dark text-white p-3 d-none d-md-flex flex-column justify-content-between position-fixed top-0 bottom-0 start-0" style="width: 240px; z-index: 1050;">
+
+    <!-- ============================================================ -->
+    <!-- SIDEBAR FIJO                                                  -->
+    <!-- ============================================================ -->
+    <aside class="sidebar-fixed bg-dark text-white p-3 d-none d-md-flex flex-column justify-content-between">
         <div class="d-flex flex-column overflow-hidden h-100">
-            <!-- MARCA / LOGO DEL COMERCIO -->
+
+            <!-- LOGO -->
             <div class="d-flex align-items-center mb-4 px-2 flex-shrink-0">
                 {% if configuracion and configuracion.logo %}
                     <img src="{{ configuracion.logo.url }}" alt="Logo" class="me-2 rounded bg-white p-1" style="max-height: 38px; max-width: 45px; object-fit: contain;">
                 {% else %}
                     <i class="fas fa-cube fa-lg text-primary me-2"></i>
                 {% endif %}
-                <span class="fs-6 fw-bold tracking-wide text-truncate" title="{% if configuracion %}{{ configuracion.nombre_fantasia|default:configuracion.razon_social }}{% else %}POS System{% endif %}">
+                <span class="fs-6 fw-bold text-truncate" title="{% if configuracion %}{{ configuracion.nombre_fantasia|default:configuracion.razon_social }}{% else %}POS System{% endif %}">
                     {% if configuracion %}
                         {{ configuracion.nombre_fantasia|default:configuracion.razon_social }}
                     {% else %}
@@ -60,7 +68,7 @@
                 </span>
             </div>
 
-            <!-- NAVEGACIÓN ESCRITORIO -->
+            <!-- NAVEGACIÓN -->
             <nav class="nav nav-pills flex-column gap-1 overflow-y-auto pe-1 flex-grow-1">
 
                 <!-- 1. DASHBOARD -->
@@ -70,31 +78,42 @@
                 </a>
                 {% endif %}
 
-                <!-- 2. MIS PEDIDOS (solo repartidor) -->
+                <!-- 2. MIS PEDIDOS (repartidor) -->
                 {% if request.user.rol == 'repartidor' %}
                 <a href="{% url 'ventas:mis_pedidos' %}" class="nav-link text-white-50 d-flex align-items-center gap-2 py-2 px-3 rounded {% if request.resolver_match.url_name == 'mis_pedidos' %}active text-white{% endif %}">
                     <i class="fas fa-shipping-fast text-warning w-20"></i> Mis Pedidos
                 </a>
                 {% endif %}
 
-                <!-- 3. SUBMENÚ VENTAS -->
-                {% if request.user.rol != 'repartidor' %}
-                {% if modulos.punto_venta or modulos.preventa or modulos.reparto or modulos.cuenta_corriente %}
+                <!-- ============================================================ -->
+                <!-- 3. SUBMENÚ VENTAS                                             -->
+                <!-- No aparece para repartidor ni deposito                        -->
+                <!-- ============================================================ -->
+                {% if request.user.rol != 'repartidor' and request.user.rol != 'deposito' %}
                 <div class="nav-item">
-                    <a class="nav-link text-white-50 d-flex align-items-center justify-content-between py-2 px-3 rounded" data-bs-toggle="collapse" href="#submenuVentas" role="button" aria-expanded="{% if 'ventas' in request.path and 'reportes' not in request.path and 'mis-pedidos' not in request.path and 'sucursal' not in request.path and 'clientes' not in request.path %}true{% else %}false{% endif %}">
+                    <a class="nav-link text-white-50 d-flex align-items-center justify-content-between py-2 px-3 rounded"
+                       data-bs-toggle="collapse" href="#submenuVentas" role="button"
+                       aria-expanded="false" aria-controls="submenuVentas">
                         <span class="d-flex align-items-center gap-2"><i class="fas fa-shopping-cart w-20"></i> Ventas</span>
                         <i class="fas fa-chevron-down small"></i>
                     </a>
-                    <div class="collapse {% if 'ventas' in request.path and 'reportes' not in request.path and 'mis-pedidos' not in request.path and 'sucursal' not in request.path and 'clientes' not in request.path %}show{% endif %}" id="submenuVentas">
+                    <div class="collapse" id="submenuVentas">
                         <nav class="nav nav-pills flex-column ps-3 gap-1 mt-1">
-                            {% if modulos.punto_venta %}
+
+                            <!-- Punto de Venta: SOLO requiere puede_vender o puede_cobrar -->
+                            {% if request.user.puede_vender or request.user.puede_cobrar %}
                             <a href="{% url 'ventas:pos' %}" class="nav-link text-white-50 py-1 px-3 rounded small {% if request.resolver_match.url_name == 'pos' %}active text-white{% endif %}">
                                 <i class="fas fa-cash-register me-2"></i> Punto de Venta
                             </a>
                             {% endif %}
+
+                            <!-- Historial -->
                             <a href="{% url 'ventas:lista_ventas' %}" class="nav-link text-white-50 py-1 px-3 rounded small {% if request.resolver_match.url_name == 'lista_ventas' %}active text-white{% endif %}">
                                 <i class="fas fa-list-alt me-2"></i> Consultar Historial
                             </a>
+
+                            <!-- Remitos Pendientes: admin/gerente/supervisor/cajero -->
+                            {% if request.user.puede_cobrar or request.user.puede_ver_todo %}
                             {% if modulos.reparto %}
                             <a href="{% url 'ventas:remitos_pendientes' %}" class="nav-link text-white-50 py-1 px-3 rounded small {% if request.resolver_match.url_name == 'remitos_pendientes' %}active text-white{% endif %}">
                                 <i class="fas fa-file-invoice me-2 text-warning"></i> Remitos Pendientes
@@ -102,20 +121,29 @@
                                     <span class="badge bg-danger ms-1">{{ cantidad_remitos_pendientes_global }}</span>
                                 {% endif %}
                             </a>
-                            <!-- 🔽 NUEVO: Repartidores con Deuda (dentro de Ventas) -->
+                            {% endif %}
+                            {% endif %}
+
+                            <!-- Repartidores con Deuda: admin/gerente/supervisor -->
+                            {% if request.user.puede_ver_todo %}
+                            {% if modulos.reparto %}
                             <a href="{% url 'ventas:repartidores_con_deuda' %}" class="nav-link text-white-50 py-1 px-3 rounded small {% if 'repartidores-con-deuda' in request.path %}active text-white{% endif %}">
                                 <i class="fas fa-hand-holding-usd me-2 text-danger"></i> Repartidores con Deuda
-                                {% if cantidad_remitos_pendientes_global and cantidad_remitos_pendientes_global > 0 %}
-                                    <span class="badge bg-danger ms-1">{{ cantidad_remitos_pendientes_global }}</span>
-                                {% endif %}
                             </a>
                             {% endif %}
+                            {% endif %}
+
+                            <!-- Cuentas Corrientes: admin/gerente/supervisor/cajero -->
+                            {% if request.user.puede_cobrar or request.user.puede_ver_todo %}
                             {% if modulos.cuenta_corriente %}
                             <a href="{% url 'ventas:cuentas_corrientes' %}" class="nav-link text-white-50 py-1 px-3 rounded small {% if request.resolver_match.url_name == 'cuentas_corrientes' %}active text-white{% endif %}">
                                 <i class="fas fa-hand-holding-usd me-2"></i> Cuentas Corrientes
                             </a>
                             {% endif %}
-                            {% if modulos.punto_venta %}
+                            {% endif %}
+
+                            <!-- Arqueo / Informes: admin/gerente/supervisor/cajero/vendedor -->
+                            {% if request.user.puede_cerrar_caja %}
                             <hr class="my-1 border-secondary opacity-25">
                             <a href="{% url 'ventas:cerrar_caja' %}" class="nav-link text-warning py-1 px-3 rounded small {% if request.resolver_match.url_name == 'cerrar_caja' %}active text-white{% endif %}">
                                 <i class="fas fa-calculator me-2"></i> Arqueo / Cerrar Turno
@@ -124,49 +152,66 @@
                                 <i class="fas fa-file-invoice me-2"></i> Informes X / Z
                             </a>
                             {% endif %}
+
                         </nav>
                     </div>
                 </div>
                 {% endif %}
-                {% endif %}
 
-                <!-- 4. SUBMENÚ CONFIG. DE VENTAS (entidades maestras) -->
-                {% if request.user.rol != 'repartidor' %}
+                <!-- ============================================================ -->
+                <!-- 4. SUBMENÚ CONFIG. DE VENTAS                                  -->
+                <!-- Solo admin, gerente y supervisor                              -->
+                <!-- ============================================================ -->
+                {% if request.user.puede_gestionar_usuarios or request.user.rol == 'supervisor' %}
                 <div class="nav-item">
-                    <a class="nav-link text-white-50 d-flex align-items-center justify-content-between py-2 px-3 rounded" data-bs-toggle="collapse" href="#submenuConfigVentas" role="button" aria-expanded="{% if 'sucursal' in request.path or 'clientes' in request.path or 'repartidores' in request.path %}true{% else %}false{% endif %}">
+                    <a class="nav-link text-white-50 d-flex align-items-center justify-content-between py-2 px-3 rounded"
+                       data-bs-toggle="collapse" href="#submenuConfigVentas" role="button"
+                       aria-expanded="false" aria-controls="submenuConfigVentas">
                         <span class="d-flex align-items-center gap-2"><i class="fas fa-sliders-h w-20"></i> Config. de Ventas</span>
                         <i class="fas fa-chevron-down small"></i>
                     </a>
-                    <div class="collapse {% if 'sucursal' in request.path or 'clientes' in request.path or 'repartidores' in request.path %}show{% endif %}" id="submenuConfigVentas">
+                    <div class="collapse" id="submenuConfigVentas">
                         <nav class="nav nav-pills flex-column ps-3 gap-1 mt-1">
+
                             {% if modulos.multi_sucursal %}
                             <a href="{% url 'configuracion:lista_sucursales' %}" class="nav-link text-white-50 py-1 px-3 rounded small {% if 'sucursal' in request.path %}active text-white{% endif %}">
                                 <i class="fas fa-store me-2"></i> Sucursales
                             </a>
                             {% endif %}
+
                             <a href="{% url 'ventas:lista_clientes' %}" class="nav-link text-white-50 py-1 px-3 rounded small {% if 'clientes' in request.path %}active text-white{% endif %}">
                                 <i class="fas fa-users me-2"></i> Clientes
                             </a>
+
+                            {% if request.user.puede_gestionar_usuarios %}
+                            <a href="{% url 'usuarios:lista_usuarios' %}" class="nav-link text-white-50 py-1 px-3 rounded small {% if 'usuarios' in request.path %}active text-white{% endif %}">
+                                <i class="fas fa-users-cog me-2"></i> Usuarios / Personal
+                            </a>
+                            {% endif %}
+
                             {% if modulos.reparto %}
-                            {% if request.user.is_superuser or request.user.rol == 'gerente' or request.user.rol == 'cajero' %}
                             <a href="{% url 'ventas:lista_repartidores' %}" class="nav-link text-white-50 py-1 px-3 rounded small {% if 'repartidores' in request.path and 'con-deuda' not in request.path %}active text-white{% endif %}">
                                 <i class="fas fa-motorcycle me-2"></i> Repartidores
                             </a>
                             {% endif %}
-                            {% endif %}
+
                         </nav>
                     </div>
                 </div>
                 {% endif %}
 
-                <!-- 5. SUBMENÚ STOCK / PRODUCTOS -->
+                <!-- ============================================================ -->
+                <!-- 5. SUBMENÚ STOCK / PRODUCTOS                                  -->
+                <!-- ============================================================ -->
                 {% if request.user.rol != 'repartidor' %}
                 <div class="nav-item">
-                    <a class="nav-link text-white-50 d-flex align-items-center justify-content-between py-2 px-3 rounded" data-bs-toggle="collapse" href="#submenuStock" role="button" aria-expanded="{% if 'productos' in request.path or 'stock' in request.path %}true{% else %}false{% endif %}">
+                    <a class="nav-link text-white-50 d-flex align-items-center justify-content-between py-2 px-3 rounded"
+                       data-bs-toggle="collapse" href="#submenuStock" role="button"
+                       aria-expanded="false" aria-controls="submenuStock">
                         <span class="d-flex align-items-center gap-2"><i class="fas fa-boxes w-20"></i> Stock / Productos</span>
                         <i class="fas fa-chevron-down small"></i>
                     </a>
-                    <div class="collapse {% if 'productos' in request.path or 'stock' in request.path %}show{% endif %}" id="submenuStock">
+                    <div class="collapse" id="submenuStock">
                         <nav class="nav nav-pills flex-column ps-3 gap-1 mt-1">
                             <a href="{% url 'productos:lista_productos' %}" class="nav-link text-white-50 py-1 px-3 rounded small {% if request.resolver_match.url_name == 'lista_productos' %}active text-white{% endif %}">
                                 <i class="fas fa-box me-2"></i> Productos / Existencias
@@ -174,7 +219,8 @@
                             <a href="{% url 'productos:movimientos_stock' %}" class="nav-link text-white-50 py-1 px-3 rounded small {% if request.resolver_match.url_name == 'movimientos_stock' %}active text-white{% endif %}">
                                 <i class="fas fa-exchange-alt me-2"></i> Movimientos de Stock
                             </a>
-                            {% if request.user.is_superuser or request.user.rol == 'gerente' or request.user.rol == 'cajero' %}
+
+                            {% if request.user.puede_gestionar_deposito %}
                             <a href="{% url 'productos:lista_categorias' %}" class="nav-link text-white-50 py-1 px-3 rounded small {% if 'categorias' in request.path %}active text-white{% endif %}">
                                 <i class="fas fa-tags me-2"></i> Rubros / Categorías
                             </a>
@@ -187,21 +233,27 @@
                 </div>
                 {% endif %}
 
-                <!-- 6. REPORTES -->
-                {% if request.user.rol != 'repartidor' %}
+                <!-- ============================================================ -->
+                <!-- 6. REPORTES                                                   -->
+                <!-- ============================================================ -->
+                {% if request.user.puede_ver_reportes %}
                 <a href="{% url 'ventas:reportes' %}" class="nav-link text-white-50 d-flex align-items-center gap-2 py-2 px-3 rounded {% if request.resolver_match.url_name == 'reportes' %}active text-white{% endif %}">
                     <i class="fas fa-chart-bar w-20"></i> Reportes / Stats
                 </a>
                 {% endif %}
 
-                <!-- 7. SUBMENÚ CONFIGURACIÓN -->
-                {% if request.user.is_superuser or request.user.rol == 'gerente' %}
+                <!-- ============================================================ -->
+                <!-- 7. SUBMENÚ CONFIGURACIÓN                                      -->
+                <!-- ============================================================ -->
+                {% if request.user.puede_configurar %}
                 <div class="nav-item">
-                    <a class="nav-link text-white-50 d-flex align-items-center justify-content-between py-2 px-3 rounded" data-bs-toggle="collapse" href="#submenuConfig" role="button" aria-expanded="{% if 'configuracion' in request.path %}true{% else %}false{% endif %}">
+                    <a class="nav-link text-white-50 d-flex align-items-center justify-content-between py-2 px-3 rounded"
+                       data-bs-toggle="collapse" href="#submenuConfig" role="button"
+                       aria-expanded="false" aria-controls="submenuConfig">
                         <span class="d-flex align-items-center gap-2"><i class="fas fa-cog w-20"></i> Configuración</span>
                         <i class="fas fa-chevron-down small"></i>
                     </a>
-                    <div class="collapse {% if 'configuracion' in request.path %}show{% endif %}" id="submenuConfig">
+                    <div class="collapse" id="submenuConfig">
                         <nav class="nav nav-pills flex-column ps-3 gap-1 mt-1">
                             <a href="{% url 'configuracion:configuracion_general' %}" class="nav-link text-white-50 py-1 px-3 rounded small {% if request.resolver_match.url_name == 'configuracion_general' %}active text-white{% endif %}">
                                 <i class="fas fa-building me-2"></i> Datos de Empresa
@@ -240,10 +292,12 @@
         </div>
     </aside>
 
-    <!-- CONTENIDO PRINCIPAL -->
-    <div class="main-wrapper flex-grow-1 d-flex flex-column w-100 overflow-hidden" style="min-height: 100vh;">
-        <!-- NAVBAR SUPERIOR -->
-        <header class="navbar navbar-expand border-bottom px-3 py-2 bg-body">
+    <!-- ============================================================ -->
+    <!-- CONTENIDO PRINCIPAL                                           -->
+    <!-- ============================================================ -->
+    <div class="main-wrapper flex-grow-1 d-flex flex-column overflow-hidden">
+
+        <header class="navbar navbar-expand border-bottom px-3 py-2 bg-body sticky-top">
             <div class="container-fluid p-0 d-flex justify-content-between align-items-center">
                 <div class="d-flex align-items-center gap-2">
                     <button class="btn btn-sm btn-outline-secondary d-md-none" type="button" data-bs-toggle="offcanvas" data-bs-target="#mobileMenu">
@@ -254,11 +308,7 @@
                             <img src="{{ configuracion.logo.url }}" alt="Logo" class="me-2 rounded" style="max-height: 28px; object-fit: contain;">
                         {% endif %}
                         <span class="fw-bold">
-                            {% if configuracion %}
-                                {{ configuracion.nombre_fantasia|default:configuracion.razon_social }}
-                            {% else %}
-                                POS System
-                            {% endif %}
+                            {% if configuracion %}{{ configuracion.nombre_fantasia|default:configuracion.razon_social }}{% else %}POS System{% endif %}
                         </span>
                     </div>
                 </div>
@@ -274,7 +324,6 @@
             </div>
         </header>
 
-        <!-- CONTENIDO DE CADA PÁGINA -->
         <main class="container-fluid p-2 p-sm-3 p-md-4 flex-grow-1 overflow-auto">
             {% if messages %}
                 {% for message in messages %}
@@ -313,7 +362,9 @@
     </div>
 </div>
 
-<!-- MENÚ DESPLEGABLE MÓVIL -->
+<!-- ============================================================ -->
+<!-- MENÚ DESPLEGABLE MÓVIL                                        -->
+<!-- ============================================================ -->
 <div class="offcanvas offcanvas-start bg-body text-body d-flex flex-column justify-content-between border-end" tabindex="-1" id="mobileMenu" style="width: 260px;">
     <div>
         <div class="offcanvas-header border-bottom">
@@ -321,11 +372,7 @@
                 {% if configuracion and configuracion.logo %}
                     <img src="{{ configuracion.logo.url }}" alt="Logo" class="me-2 rounded" style="max-height: 30px; object-fit: contain;">
                 {% endif %}
-                {% if configuracion %}
-                    {{ configuracion.nombre_fantasia|default:configuracion.razon_social }}
-                {% else %}
-                    POS System
-                {% endif %}
+                {% if configuracion %}{{ configuracion.nombre_fantasia|default:configuracion.razon_social }}{% else %}POS System{% endif %}
             </h5>
             <button type="button" class="btn-close" data-bs-dismiss="offcanvas"></button>
         </div>
@@ -339,11 +386,13 @@
                 <a href="{% url 'ventas:mis_pedidos' %}" class="nav-link text-body py-2"><i class="fas fa-shipping-fast me-2 text-warning"></i> Mis Pedidos</a>
                 {% endif %}
 
-                {% if request.user.rol != 'repartidor' %}
-                {% if modulos.punto_venta %}
+                {% if request.user.rol != 'repartidor' and request.user.rol != 'deposito' %}
+                {% if request.user.puede_vender or request.user.puede_cobrar %}
                 <a href="{% url 'ventas:pos' %}" class="nav-link text-body py-2"><i class="fas fa-cash-register me-2"></i> Punto de Venta</a>
                 {% endif %}
                 <a href="{% url 'ventas:lista_ventas' %}" class="nav-link text-body py-2"><i class="fas fa-list-alt me-2"></i> Historial de Ventas</a>
+
+                {% if request.user.puede_cobrar or request.user.puede_ver_todo %}
                 {% if modulos.reparto %}
                 <a href="{% url 'ventas:remitos_pendientes' %}" class="nav-link text-body py-2">
                     <i class="fas fa-file-invoice me-2 text-warning"></i> Remitos Pendientes
@@ -351,47 +400,59 @@
                         <span class="badge bg-danger ms-1">{{ cantidad_remitos_pendientes_global }}</span>
                     {% endif %}
                 </a>
-                <!-- 🔽 NUEVO: Repartidores con Deuda (móvil, dentro de Ventas) -->
+                {% endif %}
+                {% endif %}
+
+                {% if request.user.puede_ver_todo %}
+                {% if modulos.reparto %}
                 <a href="{% url 'ventas:repartidores_con_deuda' %}" class="nav-link text-body py-2">
                     <i class="fas fa-hand-holding-usd me-2 text-danger"></i> Repartidores con Deuda
-                    {% if cantidad_remitos_pendientes_global and cantidad_remitos_pendientes_global > 0 %}
-                        <span class="badge bg-danger ms-1">{{ cantidad_remitos_pendientes_global }}</span>
-                    {% endif %}
                 </a>
                 {% endif %}
+                {% endif %}
+
+                {% if request.user.puede_cobrar or request.user.puede_ver_todo %}
                 {% if modulos.cuenta_corriente %}
                 <a href="{% url 'ventas:cuentas_corrientes' %}" class="nav-link text-body py-2"><i class="fas fa-hand-holding-usd me-2"></i> Cuentas Corrientes</a>
                 {% endif %}
-                {% if modulos.punto_venta %}
+                {% endif %}
+
+                {% if request.user.puede_cerrar_caja %}
                 <a href="{% url 'ventas:cerrar_caja' %}" class="nav-link text-warning py-2"><i class="fas fa-calculator me-2"></i> Arqueo / Cerrar Turno</a>
                 <a href="{% url 'ventas:lista_informes' %}" class="nav-link text-body py-2"><i class="fas fa-file-invoice me-2"></i> Informes X / Z</a>
                 {% endif %}
+                {% endif %}
 
+                {% if request.user.puede_gestionar_usuarios or request.user.rol == 'supervisor' %}
                 <hr class="my-1 border-secondary opacity-25">
                 <span class="small text-muted px-2">Config. de Ventas</span>
                 {% if modulos.multi_sucursal %}
                 <a href="{% url 'configuracion:lista_sucursales' %}" class="nav-link text-body py-2"><i class="fas fa-store me-2"></i> Sucursales</a>
                 {% endif %}
                 <a href="{% url 'ventas:lista_clientes' %}" class="nav-link text-body py-2"><i class="fas fa-users me-2"></i> Clientes</a>
+                {% if request.user.puede_gestionar_usuarios %}
+                <a href="{% url 'usuarios:lista_usuarios' %}" class="nav-link text-body py-2"><i class="fas fa-users-cog me-2"></i> Usuarios / Personal</a>
+                {% endif %}
                 {% if modulos.reparto %}
-                {% if request.user.is_superuser or request.user.rol == 'gerente' or request.user.rol == 'cajero' %}
                 <a href="{% url 'ventas:lista_repartidores' %}" class="nav-link text-body py-2"><i class="fas fa-motorcycle me-2"></i> Repartidores</a>
                 {% endif %}
                 {% endif %}
 
+                {% if request.user.rol != 'repartidor' %}
                 <hr class="my-1 border-secondary opacity-25">
                 <a href="{% url 'productos:lista_productos' %}" class="nav-link text-body py-2"><i class="fas fa-boxes me-2"></i> Productos / Stock</a>
                 <a href="{% url 'productos:movimientos_stock' %}" class="nav-link text-body py-2"><i class="fas fa-exchange-alt me-2"></i> Movimientos de Stock</a>
-
-                {% if request.user.is_superuser or request.user.rol == 'gerente' or request.user.rol == 'cajero' %}
+                {% if request.user.puede_gestionar_deposito %}
                 <a href="{% url 'productos:lista_categorias' %}" class="nav-link text-body py-2"><i class="fas fa-tags me-2"></i> Rubros</a>
                 <a href="{% url 'productos:lista_proveedores' %}" class="nav-link text-body py-2"><i class="fas fa-truck me-2"></i> Proveedores</a>
                 {% endif %}
+                {% endif %}
 
+                {% if request.user.puede_ver_reportes %}
                 <a href="{% url 'ventas:reportes' %}" class="nav-link text-body py-2"><i class="fas fa-chart-bar me-2"></i> Reportes y Estadísticas</a>
                 {% endif %}
 
-                {% if request.user.is_superuser or request.user.rol == 'gerente' %}
+                {% if request.user.puede_configurar %}
                 <hr class="my-1 border-secondary opacity-25">
                 <span class="small text-muted px-2">Configuración</span>
                 <a href="{% url 'configuracion:configuracion_general' %}" class="nav-link text-body py-2"><i class="fas fa-building me-2"></i> Datos de Empresa</a>
@@ -421,45 +482,33 @@
     </div>
 </div>
 
-<!-- ========================================================= -->
-<!-- MODALES Y OVERRIDES DE alert() / confirm()                 -->
-<!-- ========================================================= -->
+<!-- ============================================================ -->
+<!-- MODALES                                                       -->
+<!-- ============================================================ -->
 
-<!-- MODAL PARA alert() -->
 <div class="modal fade" id="modal-alerta-generico" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content border-0 shadow-lg">
             <div class="modal-header bg-primary text-white">
-                <h5 class="modal-title fw-bold">
-                    <i class="fas fa-info-circle me-2"></i> Aviso del Sistema
-                </h5>
+                <h5 class="modal-title fw-bold"><i class="fas fa-info-circle me-2"></i> Aviso del Sistema</h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Cerrar"></button>
             </div>
-            <div class="modal-body">
-                <p class="mb-0" id="modal-alerta-texto"></p>
-            </div>
+            <div class="modal-body"><p class="mb-0" id="modal-alerta-texto"></p></div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-primary fw-bold" data-bs-dismiss="modal" id="modal-alerta-ok">
-                    Aceptar
-                </button>
+                <button type="button" class="btn btn-primary fw-bold" data-bs-dismiss="modal" id="modal-alerta-ok">Aceptar</button>
             </div>
         </div>
     </div>
 </div>
 
-<!-- MODAL PARA confirm() -->
 <div class="modal fade" id="modal-confirm-generico" tabindex="-1" aria-hidden="true" data-bs-backdrop="static">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content border-0 shadow-lg">
             <div class="modal-header bg-warning text-dark">
-                <h5 class="modal-title fw-bold">
-                    <i class="fas fa-question-circle me-2"></i> Confirmación
-                </h5>
+                <h5 class="modal-title fw-bold"><i class="fas fa-question-circle me-2"></i> Confirmación</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
             </div>
-            <div class="modal-body">
-                <p class="mb-0" id="modal-confirm-texto"></p>
-            </div>
+            <div class="modal-body"><p class="mb-0" id="modal-confirm-texto"></p></div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary fw-bold" data-bs-dismiss="modal" id="modal-confirm-cancelar">
                     <i class="fas fa-times me-1"></i> Cancelar
@@ -472,25 +521,21 @@
     </div>
 </div>
 
-<!-- JS Bootstrap & Lógica Modo Día/Noche -->
+<!-- ============================================================ -->
+<!-- JAVASCRIPT                                                    -->
+<!-- ============================================================ -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 <script>
-    // =========================================================
-    // OVERRIDE GLOBAL DE window.alert()
-    // =========================================================
+    // OVERRIDE GLOBAL DE alert()
     (function() {
         const alertaOriginal = window.alert;
 
         window.alert = function(mensaje) {
             const modalEl = document.getElementById('modal-alerta-generico');
-            if (!modalEl) {
-                return alertaOriginal.apply(this, arguments);
-            }
+            if (!modalEl) return alertaOriginal.apply(this, arguments);
 
             const textoEl = document.getElementById('modal-alerta-texto');
-            if (textoEl) {
-                textoEl.textContent = mensaje;
-            }
+            if (textoEl) textoEl.textContent = mensaje;
 
             const header = modalEl.querySelector('.modal-header');
             const titulo = modalEl.querySelector('.modal-title');
@@ -510,14 +555,11 @@
                 titulo.innerHTML = '<i class="fas fa-info-circle me-2"></i> Aviso';
             }
 
-            const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
-            modal.show();
+            bootstrap.Modal.getOrCreateInstance(modalEl).show();
         };
     })();
 
-    // =========================================================
-    // CONFIRM ASYNC - reemplazo de confirm() con Promise
-    // =========================================================
+    // CONFIRM ASYNC
     window.confirmAsync = function(mensaje, opciones = {}) {
         return new Promise((resolve) => {
             const modalEl = document.getElementById('modal-confirm-generico');
@@ -547,15 +589,8 @@
 
             const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
 
-            newAceptar.addEventListener('click', () => {
-                modal.hide();
-                resolve(true);
-            });
-
-            newCancelar.addEventListener('click', () => {
-                modal.hide();
-                resolve(false);
-            });
+            newAceptar.addEventListener('click', () => { modal.hide(); resolve(true); });
+            newCancelar.addEventListener('click', () => { modal.hide(); resolve(false); });
 
             modalEl.addEventListener('hidden.bs.modal', function onHidden() {
                 modalEl.removeEventListener('hidden.bs.modal', onHidden);
@@ -566,67 +601,49 @@
         });
     };
 
-    // =========================================================
-    // FUNCIONES DE LA APP (tema, inputs, etc.)
-    // =========================================================
+    // TEMA
     const htmlEl = document.documentElement;
     const themeBtn = document.getElementById('btnThemeToggle');
     const themeIcon = document.getElementById('themeIcon');
-
     const currentTheme = htmlEl.getAttribute('data-bs-theme') || 'light';
     actualizarIconoTema(currentTheme);
 
-    themeBtn.addEventListener('click', () => {
-        const newTheme = htmlEl.getAttribute('data-bs-theme') === 'light' ? 'dark' : 'light';
-        htmlEl.setAttribute('data-bs-theme', newTheme);
-        localStorage.setItem('theme', newTheme);
-        actualizarIconoTema(newTheme);
-    });
-
-    function actualizarIconoTema(theme) {
-        if (theme === 'dark') {
-            themeIcon.className = 'fas fa-sun fs-5 text-warning';
-        } else {
-            themeIcon.className = 'fas fa-moon fs-5 text-secondary';
-        }
+    if (themeBtn) {
+        themeBtn.addEventListener('click', () => {
+            const newTheme = htmlEl.getAttribute('data-bs-theme') === 'light' ? 'dark' : 'light';
+            htmlEl.setAttribute('data-bs-theme', newTheme);
+            localStorage.setItem('theme', newTheme);
+            actualizarIconoTema(newTheme);
+        });
     }
 
+    function actualizarIconoTema(theme) {
+        if (!themeIcon) return;
+        themeIcon.className = theme === 'dark' ? 'fas fa-sun fs-5 text-warning' : 'fas fa-moon fs-5 text-secondary';
+    }
+
+    // AUTO-SELECT EN INPUTS NUMÉRICOS
     document.addEventListener('focusin', function (e) {
         if (e.target && (e.target.type === 'number' || e.target.classList.contains('input-cant') || e.target.classList.contains('input-num'))) {
             setTimeout(() => { e.target.select(); }, 50);
         }
     });
-
     document.addEventListener('mouseup', function (e) {
         if (e.target && (e.target.type === 'number' || e.target.classList.contains('input-cant') || e.target.classList.contains('input-num'))) {
             e.preventDefault();
         }
     });
 
-    // =========================================================
-    // IMPRESIÓN TÉRMICA - Servicio local en 127.0.0.1:8085
-    // =========================================================
+    // IMPRESIÓN TÉRMICA
     window.servicioImpresionDisponible = async function() {
         try {
-            const resp = await fetch('http://127.0.0.1:8085/health', {
-                method: 'GET',
-                cache: 'no-store',
-            });
+            const resp = await fetch('http://127.0.0.1:8085/health', { method: 'GET', cache: 'no-store' });
             return resp.ok;
-        } catch {
-            return false;
-        }
+        } catch { return false; }
     };
 
     window.imprimirTicket = async function(contenidoHTML, opciones = {}) {
-        const config = {
-            tipo: 'ticket',
-            cortar: true,
-            abrirCajon: false,
-            impresora: '',
-            ...opciones,
-        };
-
+        const config = { tipo: 'ticket', cortar: true, abrirCajon: false, impresora: '', ...opciones };
         try {
             const response = await fetch('http://127.0.0.1:8085/print', {
                 method: 'POST',
@@ -639,35 +656,22 @@
                     impresora: config.impresora || undefined,
                 }),
             });
-
             if (!response.ok) {
                 const errorText = await response.text();
-                return {
-                    success: false,
-                    error: `HTTP ${response.status}: ${errorText}`,
-                };
+                return { success: false, error: `HTTP ${response.status}: ${errorText}` };
             }
-
-            const data = await response.json();
-            return data;
+            return await response.json();
         } catch (err) {
-            return {
-                success: false,
-                error: `Error de conexión: ${err.message}. ¿El servicio está corriendo?`,
-            };
+            return { success: false, error: `Error de conexión: ${err.message}. ¿El servicio está corriendo?` };
         }
     };
 
     window.imprimirConFeedback = async function(boton, tipo = 'ticket') {
         const textoOriginal = boton.innerHTML;
-
         const disponible = await window.servicioImpresionDisponible();
 
         if (!disponible) {
-            if (confirm(
-                '⚠️ Servicio de impresión no disponible.\n\n' +
-                '¿Querés usar la impresión tradicional del navegador?'
-            )) {
+            if (confirm('⚠️ Servicio de impresión no disponible.\n\n¿Querés usar la impresión tradicional del navegador?')) {
                 window.print();
             }
             return;
@@ -675,9 +679,7 @@
 
         boton.disabled = true;
         boton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Imprimiendo...';
-
         const contenidoHTML = document.documentElement.outerHTML;
-
         const resultado = await window.imprimirTicket(contenidoHTML, {tipo});
 
         if (resultado.success) {

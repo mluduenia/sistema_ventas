@@ -1,0 +1,116 @@
+{% extends 'base.html' %}
+
+{% block title %}Editar Usuario{% endblock %}
+
+{% block content %}
+<div class="container py-3" style="max-width: 780px;">
+
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h4 class="fw-bold m-0">
+            <i class="fas fa-user-edit text-primary me-2"></i>
+            Editar Usuario: {{ usuario_obj.username }}
+        </h4>
+        <a href="{% url 'usuarios:lista_usuarios' %}" class="btn btn-outline-secondary">
+            <i class="fas fa-arrow-left me-1"></i> Volver
+        </a>
+    </div>
+
+    <div class="card border-0 shadow-sm">
+        <div class="card-body">
+            <form method="post">
+                {% csrf_token %}
+
+                <h6 class="fw-bold text-secondary mb-3">
+                    <i class="fas fa-key me-1"></i> Datos de Acceso
+                </h6>
+                <div class="row g-3 mb-4">
+                    <div class="col-md-6">
+                        <label class="form-label fw-bold">Username</label>
+                        <input type="text" class="form-control" value="{{ usuario_obj.username }}" readonly>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label fw-bold">Rol *</label>
+                        <select name="rol" class="form-select" required>
+                            {% for codigo, label in roles_disponibles %}
+                                <option value="{{ codigo }}" {% if usuario_obj.rol == codigo %}selected{% endif %}>
+                                    {{ label }}
+                                </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label fw-bold">Nueva Contraseña (opcional)</label>
+                        <input type="password" name="password" class="form-control"
+                               placeholder="Dejar vacío para no cambiar" autocomplete="new-password">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label fw-bold">Repetir nueva contraseña</label>
+                        <input type="password" name="password2" class="form-control" autocomplete="new-password">
+                    </div>
+                </div>
+
+                <h6 class="fw-bold text-secondary mb-3">
+                    <i class="fas fa-user me-1"></i> Datos Personales
+                </h6>
+                <div class="row g-3 mb-4">
+                    <div class="col-md-6">
+                        <label class="form-label fw-bold">Nombre *</label>
+                        <input type="text" name="first_name" class="form-control"
+                               value="{{ usuario_obj.first_name }}" required>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label fw-bold">Apellido</label>
+                        <input type="text" name="last_name" class="form-control"
+                               value="{{ usuario_obj.last_name }}">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label fw-bold">Email</label>
+                        <input type="email" name="email" class="form-control"
+                               value="{{ usuario_obj.email }}">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label fw-bold">Teléfono</label>
+                        <input type="text" name="telefono" class="form-control"
+                               value="{{ usuario_obj.telefono }}">
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label fw-bold">Dirección</label>
+                        <textarea name="direccion" class="form-control" rows="2">{{ usuario_obj.direccion }}</textarea>
+                    </div>
+                </div>
+
+                <h6 class="fw-bold text-secondary mb-3">
+                    <i class="fas fa-store me-1"></i> Asignación
+                </h6>
+                <div class="row g-3 mb-4">
+                    <div class="col-md-6">
+                        <label class="form-label fw-bold">Sucursal</label>
+                        <select name="sucursal" class="form-select">
+                            <option value="">Sin sucursal</option>
+                            {% for s in sucursales %}
+                                <option value="{{ s.id }}" {% if usuario_obj.sucursal_id == s.id %}selected{% endif %}>
+                                    {{ s.nombre }}
+                                </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-6 d-flex align-items-end">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="activo" id="activo"
+                                   {% if usuario_obj.activo %}checked{% endif %}>
+                            <label class="form-check-label fw-bold" for="activo">Usuario activo</label>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="d-flex gap-2">
+                    <a href="{% url 'usuarios:lista_usuarios' %}" class="btn btn-secondary w-50">Cancelar</a>
+                    <button type="submit" class="btn btn-primary w-50 fw-bold">
+                        <i class="fas fa-save me-1"></i> Guardar cambios
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

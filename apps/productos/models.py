@@ -35,11 +35,21 @@ class Producto(models.Model):
     proveedor = models.ForeignKey(Proveedor, on_delete=models.SET_NULL, null=True, blank=True)
     precio_costo = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
     precio_venta = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
-    alicuota_iva = models.DecimalField(max_digits=5, decimal_places=2, default=21.00)
     stock_actual = models.IntegerField(default=0)
     stock_minimo = models.IntegerField(default=5)
     activo = models.BooleanField(default=True)
-
+    alicuota_iva = models.DecimalField(
+        "Alícuota IVA (%)",
+        max_digits=5,
+        decimal_places=2,
+        default=21.00,
+        help_text='Alícuota de IVA aplicable. Ej: 21.00, 10.50, 0.00'
+    )
+    precio_incluye_iva = models.BooleanField(
+        "Precio incluye IVA",
+        default=True,
+        help_text='Si está marcado, el precio de venta ya incluye IVA.'
+    )
     class Meta:
         verbose_name = 'Producto'
         verbose_name_plural = 'Productos'
@@ -163,3 +173,4 @@ class StockSucursal(models.Model):
     def necesita_reposicion(self):
         """True si el stock está por debajo del mínimo."""
         return self.cantidad <= self.stock_minimo
+

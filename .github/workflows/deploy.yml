@@ -1,0 +1,31 @@
+name: Deploy al servidor
+
+on:
+  workflow_run:
+    workflows: ["CD - Build & Push"]
+    types:
+      - completed
+
+jobs:
+  deploy:
+    name: Deploy por SSH
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+
+    steps:
+      - name: Deploy por SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          port: ${{ secrets.SSH_PORT || 22 }}
+          script: |
+            cd /opt/pos_app
+            echo "Bajando imagen nueva..."
+            docker compose pull
+            echo "Reiniciando contenedores..."
+            docker compose up -d
+            echo "Limpiando imágenes viejas..."
+            docker image prune -f
+            echo "Deploy completado."
