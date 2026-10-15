@@ -18,4 +18,4 @@ services:
       - "8083:8000"
     environment:
       DEBUG: "False"
-      ALLOWED_HOSTS: "10.0.10.181,localhost,127.0.0.1"
+      ALLOWED_HOSTS: "10.0.10.176,localhost,127.0.0.1"
