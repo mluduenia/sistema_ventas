@@ -260,7 +260,14 @@ LOGGING = {
 # ============================================================
 # SEGURIDAD EN PRODUCCIÓN
 # ============================================================
-if not DEBUG:
+# ============================================================
+# SEGURIDAD EN PRODUCCIÓN
+# ============================================================
+# Forzar HTTPS sólo si explícitamente se pide (por ejemplo, detrás
+# de un reverse proxy con TLS). Por defecto, permitir HTTP en la red local.
+FORCE_HTTPS = env('FORCE_HTTPS', 'False', bool)
+
+if FORCE_HTTPS:
     SECURE_SSL_REDIRECT = True
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
