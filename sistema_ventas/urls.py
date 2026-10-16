@@ -5,7 +5,7 @@ from django.conf.urls.static import static
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('', include('apps.core.urls')),  # Carga el Dashboard en la raíz
+    path('', include('apps.core.urls')),
     path('ventas/', include('apps.ventas.urls')),
     path('productos/', include('apps.productos.urls')),
     path('usuarios/', include('apps.usuarios.urls')),
@@ -14,5 +14,6 @@ urlpatterns = [
     path('alertas/', include('apps.alertas.urls')),
 ]
 
-if settings.DEBUG:
-    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+# Servir archivos media (logos, imágenes subidas)
+# Nota: en producción ideal usar nginx/caddy, pero esto funciona para arrancar
+urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
