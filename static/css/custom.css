@@ -60,6 +60,15 @@ html, body {
     border-color: var(--bs-border-color) !important;
 }
 
+/* Excepción: las clases *-subtle deben mantener su color de fondo
+   (se usan en los KPI del dashboard para los iconos) */
+.bg-success-subtle { background-color: rgba(25, 135, 84, 0.15) !important; color: #198754 !important; }
+.bg-danger-subtle  { background-color: rgba(220, 53, 69, 0.15) !important; color: #dc3545 !important; }
+.bg-warning-subtle { background-color: rgba(255, 193, 7, 0.15) !important; color: #cc9a06 !important; }
+.bg-info-subtle    { background-color: rgba(13, 202, 240, 0.15) !important; color: #0dcaf0 !important; }
+.bg-primary-subtle { background-color: rgba(13, 110, 253, 0.15) !important; color: #0d6efd !important; }
+.bg-secondary-subtle { background-color: rgba(108, 117, 125, 0.15) !important; color: #6c757d !important; }
+
 /* Estilos para Tarjetas */
 .card {
     border: 1px solid var(--bs-border-color) !important;
