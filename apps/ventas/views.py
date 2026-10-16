@@ -40,6 +40,61 @@ from .models import (
     PerfilRepartidor,
     Venta,
 )
+# ============================================================
+# FIX GLOBAL: DH_KEY_TOO_SMALL en producción de ARCA
+# ARCA usa DH keys de 1024 bits que Python 3.10+/OpenSSL 3.x rechaza.
+# Hay que bajarlo a SECLEVEL=1 ANTES de que pyafipws cree sus clientes.
+# ============================================================
+import ssl
+import httplib2
+
+# 1) Contexto HTTPS global permisivo
+ssl._create_default_https_context = ssl._create_unverified_context
+
+# 2) Forzar OP_LEGACY_SERVER_CONNECT (ARCA lo necesita en algunos builds)
+ssl.OP_LEGACY_SERVER_CONNECT = 0x4
+
+# 3) Parchear httplib2.Http para que TODAS las instancias usen SECLEVEL=1
+_original_http_init = httplib2.Http.__init__
+
+def _patched_http_init(self, *args, **kwargs):
+    _original_http_init(self, *args, **kwargs)
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    ctx.set_ciphers('DEFAULT@SECLEVEL=1')
+    ctx.options |= 0x4  # OP_LEGACY_SERVER_CONNECT
+    self._context = ctx
+
+httplib2.Http.__init__ = _patched_http_init
+
+# 4) Parchear SSLContext.__init__ de forma SEGURA
+#    (solo actúa si el contexto ya está inicializado; si no, no hace nada)
+_orig_sslcontext_init = ssl.SSLContext.__init__
+
+def _patched_sslcontext_init(self, *args, **kwargs):
+    try:
+        _orig_sslcontext_init(self, *args, **kwargs)
+    except TypeError:
+        # object.__init__ no acepta argumentos extra → lo llamamos sin args
+        try:
+            _orig_sslcontext_init(self)
+        except Exception:
+            pass
+    except Exception:
+        pass
+
+    # Intentar aplicar SECLEVEL=1 y OP_LEGACY, pero sin romper si falla
+    try:
+        self.set_ciphers('DEFAULT@SECLEVEL=1')
+    except Exception:
+        pass
+    try:
+        self.options |= 0x4
+    except Exception:
+        pass
+
+ssl.SSLContext.__init__ = _patched_sslcontext_init
 
 logger = logging.getLogger(__name__)
 Usuario = get_user_model()
@@ -401,6 +456,11 @@ def procesar_venta_ajax(request):
         config = EmpresaConfig.objects.first()
         condicion_emisor = config.condicion_iva if config else 'MO'
 
+        # 🔽 Cargar cliente_obj ANTES de usarlo
+        cliente_obj = None
+        if cliente_id:
+            cliente_obj = Cliente.objects.filter(id=cliente_id).first()
+
         if accion_comprobante == 'PRESUPUESTO':
             estado_venta = 'PRESUPUESTO'
             tipo_comprobante_final = 0
@@ -496,7 +556,7 @@ def procesar_venta_ajax(request):
         monto_recibido = Decimal(str(monto_recibido))
         vuelto = max(Decimal('0.00'), monto_recibido - total_venta)
 
-                # ============================================================
+        # ============================================================
         # 6b. CALCULAR DESGLOSE DE IVA
         # ============================================================
         if discrimina_iva and config:
@@ -519,12 +579,8 @@ def procesar_venta_ajax(request):
             imp_iva = Decimal('0.00')
             alicuota_aplicada = Decimal('0.00')
 
-        # 7. Obtener datos del Cliente
-        cliente_obj = None
-        if cliente_id:
-            cliente_obj = Cliente.objects.filter(id=cliente_id).first()
 
-        # 7b. 🔽 VALIDACIÓN: Consumidor Final anónimo no puede ir a remito/reparto
+        # 7. 🔽 VALIDACIÓN: Consumidor Final anónimo no puede ir a remito/reparto
         if not cliente_obj and (es_remito or repartidor_obj):
             return JsonResponse({
                 'status': 'error',
@@ -714,18 +770,13 @@ def procesar_venta_ajax(request):
                 # Factura C (11): NO discrimina IVA (emisor Monotributista)
                 # ============================================================
 
-                if tipo_comprobante_final == 11:
-                    # Factura C: no discrimina IVA
-                    imp_neto = total_venta
-                    imp_iva = Decimal('0.00')
-                else:
-                    # Factura A o B: discrimina IVA 21%
-                    imp_neto = (total_venta / Decimal("1.21")).quantize(
-                        Decimal("0.01"), rounding=ROUND_HALF_UP
-                    )
-                    imp_iva = (total_venta - imp_neto).quantize(
-                        Decimal("0.01"), rounding=ROUND_HALF_UP
-                    )
+                # ============================================================
+                # Usar el IVA ya calculado en el paso 6b (NO recalcular)
+                # ============================================================
+                # imp_neto e imp_iva ya vienen calculados arriba.
+                # Solo aseguramos que sean Decimal para la llamada a pyafipws.
+                imp_neto = Decimal(str(imp_neto))
+                imp_iva = Decimal(str(imp_iva))
 
                 wsfev1.CrearFactura(
                     concepto=1,
@@ -776,6 +827,14 @@ def procesar_venta_ajax(request):
                 else:
                     resultado = getattr(wsfev1, "Resultado", "Desconocido")
                     obs = getattr(wsfev1, "Obs", "Sin observaciones")
+                    # ANTES del if cae_obtenido
+                    logger.info(f"DEBUG WSFE Resultado: {getattr(wsfev1, 'Resultado', None)!r}")
+                    logger.info(f"DEBUG WSFE CAE: {getattr(wsfev1, 'CAE', None)!r}")
+                    logger.info(f"DEBUG WSFE ErrMsg: {getattr(wsfev1, 'ErrMsg', None)!r}")
+                    logger.info(f"DEBUG WSFE Obs: {getattr(wsfev1, 'Obs', None)!r}")
+                    logger.info(f"DEBUG WSFE Detalle: {getattr(wsfev1, 'Detalle', None)!r}")
+                    logger.info(f"DEBUG WSFE XmlRequest: {getattr(wsfev1, 'XmlRequest', None)}")
+                    logger.info(f"DEBUG WSFE XmlResponse: {getattr(wsfev1, 'XmlResponse', None)}")
                     logger.error(f"Respuesta ARCA sin CAE. Resultado: {resultado}, Obs: {obs}")
 
             except Exception as afip_err:
@@ -3064,19 +3123,20 @@ def facturar_venta_existente(request, venta_id):
     Toma una venta emitida como ticket no fiscal (tipo_comprobante=0)
     y le solicita el CAE a ARCA/AFIP.
 
-    Reutiliza EXACTAMENTE la misma lógica de AFIP que procesar_venta_ajax.
+    Corregido para leer la respuesta desde wsfev1.Detalle[0],
+    que es donde pyafipws realmente expone el CAE / Resultado / Obs.
     """
     if request.method != 'POST':
         return JsonResponse({'status': 'error', 'message': 'Método no permitido.'}, status=405)
 
+    # ============================================================
+    # VALIDACIONES BÁSICAS
+    # ============================================================
     try:
         venta = Venta.objects.select_for_update().get(pk=venta_id)
     except Venta.DoesNotExist:
         return JsonResponse({'status': 'error', 'message': 'Venta no encontrada.'}, status=404)
 
-    # ============================================================
-    # VALIDACIONES
-    # ============================================================
     if venta.cae:
         return JsonResponse({
             'status': 'error',
@@ -3098,54 +3158,47 @@ def facturar_venta_existente(request, venta_id):
     if venta.estado == 'PRESUPUESTO':
         return JsonResponse({
             'status': 'error',
-            'message': 'Esta venta es un Presupuesto, no un ticket. No se puede facturar directamente.'
+            'message': 'Esta venta es un Presupuesto. No se puede facturar directamente.'
         }, status=400)
 
     if venta.tipo_comprobante != 0:
         return JsonResponse({
             'status': 'error',
-            'message': f'Esta venta ya tiene tipo de comprobante asignado ({venta.get_tipo_comprobante_display()}).'
-        }, status=400)
-
-        # ============================================================
-    # DETERMINAR TIPO DE COMPROBANTE SEGÚN EMISOR + CLIENTE
-    # ============================================================
-    config = EmpresaConfig.objects.first()
-    condicion_emisor = config.condicion_iva if config else 'MO'
-
-    if condicion_emisor == 'MO':
-        tipo_comprobante_final = 11  # Monotributista → Factura C
-        discrimina_iva = False
-    elif condicion_emisor == 'RI':
-        if venta.cliente and venta.cliente.condicion_iva == '1':
-            tipo_comprobante_final = 1  # Factura A
-        else:
-            tipo_comprobante_final = 6  # Factura B
-        discrimina_iva = True
-    else:
-        tipo_comprobante_final = 11  # Exento → Factura C
-        discrimina_iva = False
-
-    # Validaciones
-    if condicion_emisor == 'RI' and tipo_comprobante_final == 11:
-        return JsonResponse({
-            'status': 'error',
-            'message': 'Un Responsable Inscripto debe emitir Factura A o B.'
+            'message': f'Esta venta ya tiene tipo de comprobante asignado '
+                       f'({venta.get_tipo_comprobante_display()}).'
         }, status=400)
 
     # ============================================================
-    # VALIDAR CONFIGURACIÓN DE EMPRESA
+    # VALIDAR CONFIG EMPRESA / ARCA
     # ============================================================
     config = EmpresaConfig.objects.first()
-
     if not (config and config.certificado_crt and config.clave_privada_key and config.cuit):
         return JsonResponse({
             'status': 'error',
-            'message': 'La configuración de ARCA/AFIP está incompleta. Verificá los certificados y el CUIT.'
+            'message': 'La configuración de ARCA/AFIP está incompleta. '
+                       'Verificá certificado, clave y CUIT.'
         }, status=400)
 
     # ============================================================
-    # CONEXIÓN A ARCA/AFIP (misma lógica que procesar_venta_ajax)
+    # DETERMINAR TIPO DE COMPROBANTE SEGÚN EMISOR + CLIENTE
+    # ============================================================
+    condicion_emisor = config.condicion_iva or 'MO'
+
+    if condicion_emisor == 'MO':
+        tipo_comprobante_final = 11   # Factura C (Monotributo)
+        discrimina_iva = False
+    elif condicion_emisor == 'RI':
+        if venta.cliente and venta.cliente.condicion_iva == '1':
+            tipo_comprobante_final = 1     # Factura A
+        else:
+            tipo_comprobante_final = 6     # Factura B
+        discrimina_iva = True
+    else:
+        tipo_comprobante_final = 11   # Exento → C
+        discrimina_iva = False
+
+    # ============================================================
+    # CONEXIÓN A ARCA/AFIP
     # ============================================================
     try:
         from pyafipws.wsaa import WSAA
@@ -3162,6 +3215,7 @@ def facturar_venta_existente(request, venta_id):
             wsdl_wsaa = "https://wsaahomo.afip.gov.ar/ws/services/LoginCms"
             wsdl_wsfe = "https://wswhomo.afip.gov.ar/wsfev1/service.asmx?WSDL"
 
+        logger.info(f"[ARCA] Autenticando WSAA ({config.ambiente_arca}) CUIT={cuit}")
         wsaa = WSAA()
         ta = wsaa.Autenticar("wsfe", cert_path, key_path, wsdl=wsdl_wsaa)
 
@@ -3174,34 +3228,45 @@ def facturar_venta_existente(request, venta_id):
 
         wsfev1.Conectar(wsdl=wsdl_wsfe, cache=CACHE_DIR)
 
+        # --------------------------------------------------------
+        # Último comprobante autorizado → siguiente número
+        # --------------------------------------------------------
         pto_vta = int(config.punto_de_venta or 1)
-        cbte_nro = int(wsfev1.CompUltimoAutorizado(tipo_comprobante_final, pto_vta) or 0) + 1
+        ultimo = wsfev1.CompUltimoAutorizado(tipo_comprobante_final, pto_vta)
+        cbte_nro = int(ultimo or 0) + 1
 
-        # Datos del cliente para el comprobante
+        logger.info(f"[ARCA] PtoVta={pto_vta} TipoCbte={tipo_comprobante_final} "
+                    f"Último={ultimo} Siguiente={cbte_nro}")
+
+        # --------------------------------------------------------
+        # Documento del receptor
+        # --------------------------------------------------------
         doc_tipo = 99
         doc_nro = 0
 
         if venta.cliente and venta.cliente.numero_documento:
             doc_nro = venta.cliente.numero_documento.replace("-", "").strip()
             if len(doc_nro) == 11:
-                doc_tipo = 80
+                doc_tipo = 80     # CUIT
             elif len(doc_nro) == 8:
-                doc_tipo = 96
+                doc_tipo = 96     # DNI
             else:
-                doc_tipo = 99
+                doc_tipo = 99     # Consumidor Final
 
         fecha_cbte = timezone.now().strftime("%Y%m%d")
 
         cond_iva_receptor = 5
-        if venta.cliente and hasattr(venta.cliente, 'condicion_iva') and venta.cliente.condicion_iva:
+        if venta.cliente and getattr(venta.cliente, 'condicion_iva', None):
             try:
                 cond_iva_receptor = int(venta.cliente.condicion_iva)
             except (ValueError, TypeError):
                 cond_iva_receptor = 5
 
+        # --------------------------------------------------------
+        # IVA según tipo de comprobante
+        # --------------------------------------------------------
         total_venta = venta.total
 
-                # Cálculo de IVA según emisor
         if discrimina_iva and config:
             alicuota = Decimal(str(config.alicuota_iva_default)) / Decimal('100')
             imp_neto = (total_venta / (Decimal('1') + alicuota)).quantize(
@@ -3214,6 +3279,9 @@ def facturar_venta_existente(request, venta_id):
             imp_neto = total_venta
             imp_iva = Decimal('0.00')
 
+        # --------------------------------------------------------
+        # Armar el comprobante
+        # --------------------------------------------------------
         wsfev1.CrearFactura(
             concepto=1,
             tipo_doc=doc_tipo,
@@ -3231,38 +3299,99 @@ def facturar_venta_existente(request, venta_id):
             fecha_cbte=fecha_cbte,
         )
 
+        # Campos extra (algunos solo aplican para Factura A/B)
         try:
             wsfev1.EstablecerCampoFactura("condicion_iva_receptor_id", str(cond_iva_receptor))
             wsfev1.EstablecerCampoFactura("cancela_misma_moneda_ext", "N")
         except Exception as e:
-            logger.warning(f"No se pudo establecer condicion_iva_receptor_id: {e}")
+            logger.warning(f"No pude setear campos extra: {e}")
 
         if tipo_comprobante_final != 11:
             wsfev1.AgregarIva(5, float(imp_neto), float(imp_iva))
+            logger.info(f"[ARCA] IVA agregado neto={imp_neto} iva={imp_iva}")
+        else:
+            logger.info("[ARCA] Factura C: no se agrega IVA")
 
+        # --------------------------------------------------------
+        # Solicitar CAE
+        # --------------------------------------------------------
         wsfev1.CAESolicitar()
 
-        cae_obtenido = getattr(wsfev1, "CAE", None)
-        vencimiento_obtenido = getattr(wsfev1, "Vencimiento", None)
+        # ============================================================
+        # LECTURA DE RESPUESTA (pyafipws expone Detalle[0])
+        # ============================================================
+        resultado = getattr(wsfev1, 'Resultado', None)
+        errmsg    = getattr(wsfev1, 'ErrMsg', None)
+        obs       = getattr(wsfev1, 'Obs', None)
+        detalle   = getattr(wsfev1, 'Detalle', None)
+        xml_req   = getattr(wsfev1, 'XmlRequest', None)
+        xml_resp  = getattr(wsfev1, 'XmlResponse', None)
 
+        logger.info(f"[ARCA] Resultado={resultado!r} ErrMsg={errmsg!r} Obs={obs!r}")
+        if detalle:
+            logger.info(f"[ARCA] Detalle={detalle!r}")
+        if xml_resp:
+            logger.info(f"[ARCA] XmlResponse={xml_resp}")
+
+        cae_obtenido = None
+        vencimiento_obtenido = None
+
+        if detalle:
+            try:
+                primer = detalle[0] if isinstance(detalle, list) else detalle
+                cae_obtenido = primer.get('CAE') or primer.get('Cae')
+                vencimiento_obtenido = primer.get('CAEFchVto') or primer.get('Vencimiento')
+            except Exception as e:
+                logger.warning(f"No pude extraer CAE del Detalle: {e}")
+
+        # Fallback por si pyafipws lo expone como atributo directo
         if not cae_obtenido:
-            resultado = getattr(wsfev1, "Resultado", "Desconocido")
-            obs = getattr(wsfev1, "Obs", "Sin observaciones")
-            logger.error(f"Respuesta ARCA sin CAE. Resultado: {resultado}, Obs: {obs}")
+            cae_obtenido = getattr(wsfev1, 'CAE', None)
+        if not vencimiento_obtenido:
+            vencimiento_obtenido = getattr(wsfev1, 'Vencimiento', None)
+
+        # --------------------------------------------------------
+        # Si NO hay CAE → armar mensaje de rechazo legible
+        # --------------------------------------------------------
+        if not cae_obtenido:
+            partes = []
+            if resultado:
+                partes.append(f"Resultado={resultado}")
+            if errmsg:
+                # errmsg puede ser lista
+                if isinstance(errmsg, (list, tuple)):
+                    partes.extend(str(x) for x in errmsg)
+                else:
+                    partes.append(str(errmsg))
+            if obs:
+                if isinstance(obs, (list, tuple)):
+                    partes.extend(str(x) for x in obs)
+                else:
+                    partes.append(str(obs))
+            if not partes:
+                partes.append("ARCA no devolvió CAE ni detalle de error")
+
+            mensaje = " | ".join(partes)
+            logger.error(f"[ARCA] RECHAZO Venta #{venta.id}: {mensaje}")
+
             return JsonResponse({
                 'status': 'error',
-                'message': f'ARCA rechazó la solicitud. Resultado: {resultado}. Obs: {obs}'
+                'message': f'ARCA rechazó la solicitud: {mensaje}'
             }, status=500)
 
         # ============================================================
-        # ACTUALIZAR LA VENTA CON LOS DATOS DEL CAE
+        # CAE OK → actualizar la venta
         # ============================================================
         venta.cae = str(cae_obtenido)
+
         if vencimiento_obtenido:
             try:
-                venta.vencimiento_cae = datetime.strptime(str(vencimiento_obtenido), "%Y%m%d").date()
+                venta.vencimiento_cae = datetime.strptime(
+                    str(vencimiento_obtenido), "%Y%m%d"
+                ).date()
             except ValueError:
-                logger.warning(f"No se pudo parsear la fecha de vencimiento: {vencimiento_obtenido}")
+                logger.warning(f"No pude parsear vencimiento CAE: {vencimiento_obtenido}")
+
         venta.numero_comprobante = cbte_nro
         venta.tipo_comprobante = tipo_comprobante_final
         venta.subtotal_neto = imp_neto
@@ -3271,13 +3400,16 @@ def facturar_venta_existente(request, venta_id):
         venta.discrimina_iva = discrimina_iva
         venta.save()
 
-        logger.info(f"CAE Autorizado para Venta #{venta.id} (facturación diferida): {cae_obtenido}")
+        logger.info(f"[ARCA] CAE OK Venta #{venta.id}: {cae_obtenido} "
+                    f"Vto={vencimiento_obtenido} CbteNro={cbte_nro}")
 
-        # Auditoría
         registrar_log(
             request,
             accion='VENTA_FACTURAR',
-            descripcion=f'Venta #{venta.id} facturada retroactivamente - CAE {cae_obtenido} - Tipo {tipo_comprobante_final}',
+            descripcion=(
+                f'Venta #{venta.id} facturada - CAE {cae_obtenido} - '
+                f'Tipo {tipo_comprobante_final} - Nro {cbte_nro}'
+            ),
             modelo='Venta',
             objeto_id=venta.id,
             datos_despues={
@@ -3292,6 +3424,7 @@ def facturar_venta_existente(request, venta_id):
             'message': 'Factura emitida correctamente.',
             'venta_id': venta.id,
             'cae': str(cae_obtenido),
+            'vencimiento_cae': str(venta.vencimiento_cae) if venta.vencimiento_cae else None,
             'numero_comprobante': cbte_nro,
             'tipo_comprobante': tipo_comprobante_final,
             'tipo_comprobante_display': venta.get_tipo_comprobante_display(),
