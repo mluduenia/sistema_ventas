@@ -1,7 +1,7 @@
 from django.contrib import admin
-from django.urls import path, include
+from django.urls import path, re_path, include
 from django.conf import settings
-from django.conf.urls.static import static
+from django.views.static import serve
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -14,6 +14,6 @@ urlpatterns = [
     path('alertas/', include('apps.alertas.urls')),
 ]
 
-# Servir archivos media (logos, imágenes subidas)
-# Nota: en producción ideal usar nginx/caddy, pero esto funciona para arrancar
-urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+# Servir archivos media (logos, imágenes subidas) incluso con DEBUG=False.
+# Nota: para mejor rendimiento en producción, usar nginx/caddy.
+re_path(r'^media/(?P<path>.*)$', serve, {'document_root': settings.MEDIA_ROOT}),
