@@ -12,8 +12,9 @@ urlpatterns = [
     path('configuracion/', include('apps.configuracion.urls')),
     path('session_security/', include('session_security.urls')),
     path('alertas/', include('apps.alertas.urls')),
+    # Servir archivos media (logos, imágenes subidas) incluso con DEBUG=False.
+    # Nota: para mejor rendimiento en producción, usar nginx/caddy.
+    re_path(r'^media/(?P<path>.*)$', serve, {'document_root': settings.MEDIA_ROOT}),
 ]
 
-# Servir archivos media (logos, imágenes subidas) incluso con DEBUG=False.
-# Nota: para mejor rendimiento en producción, usar nginx/caddy.
-re_path(r'^media/(?P<path>.*)$', serve, {'document_root': settings.MEDIA_ROOT}),
+
